@@ -6,6 +6,7 @@ import com.duox.advancedutilities.system.Module;
 import com.duox.advancedutilities.system.settings.NumberSetting;
 import com.duox.advancedutilities.utils.CacheUtils;
 import com.duox.advancedutilities.utils.InventoryUtils;
+import com.google.gson.reflect.TypeToken;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -17,6 +18,8 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
+import java.lang.reflect.Type;
+import java.nio.file.Path;
 import java.util.*;
 
 public class StorageManager extends Module {
@@ -56,6 +59,10 @@ public class StorageManager extends Module {
     @Override
     public void onEnable() {
         if (mc.player == null) return;
+
+        // Load cache from file if not already loaded
+        ensureCacheLoaded();
+
         if (mc.screen == null) {
             mc.setScreen(new StorageScreen(this));
         }
@@ -125,6 +132,28 @@ public class StorageManager extends Module {
     }
 
     // --- Internal Logic ---
+
+    /**
+     * Load cache from file if not already loaded
+     */
+    private void ensureCacheLoaded() {
+        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
+
+        // If cache is empty, try to load from file
+        if (cache.isEmpty()) {
+            Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
+            Type type = new TypeToken<Map<String, Map<String, Integer>>>(){}.getType();
+            Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
+
+            if (loaded != null && !loaded.isEmpty()) {
+                cache.putAll(loaded);
+                AutoStash.cacheDirty = true;
+                sendMessage("§aLoaded cache from file (" + loaded.size() + " chests).");
+            } else {
+                sendMessage("§eCache is empty. You may need to run AutoStash to rebuild the cache first.");
+            }
+        }
+    }
 
     private void resetState() {
         currentState = State.IDLE;
