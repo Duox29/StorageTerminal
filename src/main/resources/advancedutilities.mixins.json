@@ -7,7 +7,8 @@
   "mixins": [
     "MixinClientPacketListener",
     "MixinContainerScreen",
-    "MixinMinecraft"
+    "MixinMinecraft",
+    "MixinMultiPlayerGameMode"
   ],
   "injectors": {
     "defaultRequire": 1

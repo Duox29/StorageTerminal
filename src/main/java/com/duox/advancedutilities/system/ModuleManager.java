@@ -87,6 +87,9 @@ public class ModuleManager {
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
         if (Minecraft.getInstance().player != null) {
+            // Xử lý manual cache update cho AutoStash (luôn chạy, không phụ thuộc vào module enabled)
+            AutoStash.tickManualCacheUpdate();
+
             // Handle module keybinds
             List<Module> toggledModules = new ArrayList<>();
             for (Module module : moduleMap.values()) {

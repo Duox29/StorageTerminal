@@ -18,6 +18,12 @@ public class MixinClientPacketListener {
         AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
         if (autoStash != null && autoStash.isEnabled() && autoStash.isSilentMode()) {
             autoStash.onSilentContainerOpen(packet.getContainerId(), packet.getType());
+        } else if (autoStash != null) {
+            // Nếu không phải silent mode, có thể là manual open
+            // Gọi onManualContainerOpen với vị trí block đã lưu
+            if (AutoStash.getLastInteractedBlock() != null) {
+                autoStash.onManualContainerOpen(packet.getContainerId(), AutoStash.getLastInteractedBlock());
+            }
         }
 
         StorageManager storageManager = ModuleManager.INSTANCE.getModule(StorageManager.class);

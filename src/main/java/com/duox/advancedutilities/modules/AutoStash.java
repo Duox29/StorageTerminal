@@ -6,6 +6,7 @@ import com.duox.advancedutilities.system.settings.BooleanSetting;
 import com.duox.advancedutilities.system.settings.NumberSetting;
 import com.duox.advancedutilities.utils.CacheUtils;
 import com.google.gson.reflect.TypeToken;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -56,6 +57,12 @@ public class AutoStash extends Module {
     private int waitTimer = 0;
     private int silentContainerId = -1;
     private boolean containerReady = false;
+
+    // --- Manual Container Tracking ---
+    private static BlockPos lastInteractedBlock = null;
+    private static boolean isManualOpen = false;
+    private static BlockPos pendingManualUpdate = null;
+    private static int manualUpdateTimer = 0;
 
     private List<BlockPos> scanQueue = new ArrayList<>();
     private Map<BlockPos, List<Integer>> stashQueue = new HashMap<>();
@@ -121,6 +128,9 @@ public class AutoStash extends Module {
     @Override
     public void onTick() {
         if (mc.player == null || mc.level == null) { this.setEnabled(false); return; }
+
+        // Xử lý manual cache update (chạy luôn, không phụ thuộc vào trạng thái của module)
+        processManualCacheUpdate();
 
         switch (currentState) {
             case SCANNING_WORLD: processScanQueue(); break;
@@ -366,6 +376,118 @@ public class AutoStash extends Module {
         if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
             mc.player.connection.send(new ServerboundContainerClosePacket(mc.player.containerMenu.containerId));
             mc.player.containerMenu = mc.player.inventoryMenu;
+        }
+    }
+
+    // ========== MANUAL CONTAINER TRACKING ==========
+
+    /**
+     * Được gọi từ Mixin khi người chơi click vào một block
+     */
+    public static void setLastInteractedBlock(BlockPos pos) {
+        lastInteractedBlock = pos;
+        isManualOpen = true;
+    }
+
+    /**
+     * Lấy vị trí block mà người chơi vừa click
+     */
+    public static BlockPos getLastInteractedBlock() {
+        return lastInteractedBlock;
+    }
+
+    /**
+     * Được gọi từ Mixin khi nhận packet mở container
+     * Nếu đây là manual open (không phải silent mode), cập nhật cache
+     */
+    public void onManualContainerOpen(int containerId, BlockPos containerPos) {
+        if (mc == null || mc.player == null || mc.level == null) return;
+
+        // Nếu đây không phải là manual open, bỏ qua
+        if (!isManualOpen) return;
+
+        // Kiểm tra xem container này có hợp lệ không
+        BlockEntity be = mc.level.getBlockEntity(containerPos);
+        if (!isValidContainer(be)) return;
+
+        // Lưu vị trí để cập nhật cache sau khi container được mở hoàn toàn
+        // Chúng ta sẽ cập nhật trong onTick sau vài tick
+        scheduleManualCacheUpdate(containerPos);
+    }
+
+    private void scheduleManualCacheUpdate(BlockPos pos) {
+        // Xử lý double chest: nếu là LEFT chest thì skip
+        BlockEntity be = mc.level.getBlockEntity(pos);
+        if (isDuplicateDoubleChest(be)) {
+            // Tìm RIGHT chest và dùng vị trí đó
+            if (be instanceof ChestBlockEntity) {
+                net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
+                if (state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) == ChestType.LEFT) {
+                    Direction facing = state.getValue(ChestBlock.FACING);
+                    pos = pos.relative(facing.getClockWise());
+                }
+            }
+        }
+
+        pendingManualUpdate = pos;
+        manualUpdateTimer = 5; // Chờ 5 ticks để container menu được đồng bộ
+    }
+
+    /**
+     * Được gọi trong onTick để xử lý manual cache update
+     */
+    private void processManualCacheUpdate() {
+        tickManualCacheUpdate();
+    }
+
+    /**
+     * Static method để xử lý manual cache update, có thể gọi từ bất kỳ đâu
+     */
+    public static void tickManualCacheUpdate() {
+        if (pendingManualUpdate == null) return;
+
+        Minecraft minecraft = Minecraft.getInstance();
+        manualUpdateTimer--;
+        if (manualUpdateTimer <= 0) {
+            // Kiểm tra xem container có đang mở không
+            if (minecraft.player != null && minecraft.player.containerMenu != null && minecraft.player.containerMenu != minecraft.player.inventoryMenu) {
+                updateManualContainerCache(pendingManualUpdate);
+            }
+            pendingManualUpdate = null;
+            isManualOpen = false;
+        }
+    }
+
+    /**
+     * Cập nhật cache cho container được mở manually
+     */
+    private static void updateManualContainerCache(BlockPos pos) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || minecraft.level == null) return;
+
+        AbstractContainerMenu menu = minecraft.player.containerMenu;
+        int containerSlots = menu.slots.size() - 36;
+
+        if (containerSlots > 0) {
+            Map<String, Integer> contents = new HashMap<>();
+            for (int i = 0; i < containerSlots; i++) {
+                ItemStack stack = menu.getSlot(i).getItem();
+                if (!stack.isEmpty()) {
+                    String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                    contents.put(itemId, contents.getOrDefault(itemId, 0) + stack.getCount());
+                }
+            }
+
+            String posKey = CacheUtils.posToString(pos);
+            chestCache.put(posKey, contents);
+            cacheDirty = true;
+
+            // Lưu vào file
+            Path cacheFile = CacheUtils.getCacheFilePath(minecraft, "autostash");
+            CacheUtils.updateSpecificJsonObject(cacheFile, posKey, contents);
+
+            // Thông báo cho người chơi (tuỳ chọn)
+            // sendMessage("§aCache updated for chest at " + posKey);
         }
     }
 }
