@@ -56,6 +56,10 @@ public class AutoStash extends Module {
         return chestCache;
     }
 
+    public double getRange() {
+        return range.getValue();
+    }
+
     // --- Runtime Variables ---
     private State currentState = State.IDLE;
     private BlockPos currentTarget = null;
