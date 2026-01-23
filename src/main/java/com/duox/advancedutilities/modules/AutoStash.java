@@ -41,6 +41,11 @@ public class AutoStash extends Module {
     private final NumberSetting itemsPerTick = new NumberSetting("Items/Tick", 4.0, 1.0, 27.0, 1.0);
     private final BooleanSetting rebuildCache = new BooleanSetting("Rebuild Cache Next Run", false);
 
+    // --- Scoring Weight Settings ---
+    private final NumberSetting distanceWeight = new NumberSetting("Distance Weight", 0.2, 0.0, 1.0, 0.1);
+    private final NumberSetting itemConcentrationWeight = new NumberSetting("Item Concentration Weight", 0.4, 0.0, 1.0, 0.1);
+    private final NumberSetting spaceWeight = new NumberSetting("Space Weight", 0.4, 0.0, 1.0, 0.1);
+
     // --- Cache Data Structures ---
     private static Map<String, Map<String, Integer>> chestCache = new HashMap<>();
 
@@ -88,6 +93,9 @@ public class AutoStash extends Module {
         this.addSetting(includeHotbar);
         this.addSetting(itemsPerTick);
         this.addSetting(rebuildCache);
+        this.addSetting(distanceWeight);
+        this.addSetting(itemConcentrationWeight);
+        this.addSetting(spaceWeight);
     }
 
     @Override
@@ -233,23 +241,165 @@ public class AutoStash extends Module {
 
     private BlockPos findBestChest(String itemId) {
         BlockPos bestPos = null;
-        int maxCount = -1;
+        double maxScore = -1;
         BlockPos playerPos = mc.player.blockPosition();
         double rangeSq = Math.pow(range.getValue(), 2);
+
         for (Map.Entry<String, Map<String, Integer>> entry : chestCache.entrySet()) {
             String posStr = entry.getKey();
             Map<String, Integer> contents = entry.getValue();
-            if (contents.containsKey(itemId)) {
-                BlockPos pos = CacheUtils.stringToPos(posStr);
-                if (pos.distSqr(playerPos) > rangeSq) continue;
-                int count = contents.get(itemId);
-                if (count > maxCount) {
-                    maxCount = count;
-                    bestPos = pos;
-                }
+            BlockPos pos = CacheUtils.stringToPos(posStr);
+
+            // Skip if out of range
+            if (pos.distSqr(playerPos) > rangeSq) continue;
+
+            // Skip if doesn't contain item
+            if (!contents.containsKey(itemId)) continue;
+
+            // Calculate multi-factor score
+            double score = calculateChestScore(pos, contents, itemId);
+            if (score > maxScore) {
+                maxScore = score;
+                bestPos = pos;
             }
         }
         return bestPos;
+    }
+
+    /**
+     * Calculate a multi-factor score for chest selection
+     *
+     * @param pos Chest position
+     * @param contents Chest contents (itemId -> count)
+     * @param itemId Item to stash
+     * @return Score (higher = better fit)
+     */
+    private double calculateChestScore(BlockPos pos, Map<String, Integer> contents, String itemId) {
+        // Factor 1: Distance (closer = better)
+        double distance = Math.sqrt(pos.distSqr(mc.player.blockPosition()));
+        double distScore = 1.0 / (1.0 + distance / 10.0); // Normalize to [0, 1]
+
+        // Factor 2: Item Concentration (more of this item = better fit)
+        int itemCount = contents.get(itemId);
+        double itemScore = Math.min(1.0, itemCount / 64.0); // Cap at 1 stack
+
+        // Get max stack size for this specific item
+        int maxStackSize = getMaxStackSize(itemId);
+
+        // Factor 3: Space Availability
+        ChestSpaceInfo spaceInfo = calculateChestSpace(pos, contents);
+        double spaceScore;
+
+        if (spaceInfo.availableSlots == 0) {
+            // Chest has no empty slots - check if THIS SPECIFIC ITEM can be stacked
+            // CRITICAL FIX: Check if the specific item we want to stash has stackable space
+            if (contents.containsKey(itemId)) {
+                int currentItemCount = contents.get(itemId);
+
+                if (currentItemCount >= maxStackSize) {
+                    // This item's stack is already full, cannot add more
+                    return -1.0; // Exclude this chest from consideration
+                } else {
+                    // This item's stack has space, but penalize heavily since chest is full
+                    spaceScore = 0.3;
+                }
+            } else {
+                // Chest doesn't contain this item and has no empty slots
+                // Cannot add new item type
+                return -1.0; // Exclude this chest from consideration
+            }
+        } else {
+            // Normal case: calculate based on used capacity
+            int totalCapacity = spaceInfo.totalSlots * 64;
+            int usedCapacity = contents.values().stream().mapToInt(Integer::intValue).sum();
+            spaceScore = Math.max(0, 1.0 - (double) usedCapacity / totalCapacity);
+        }
+
+        // Weighted Score
+        double totalWeight = distanceWeight.getValue() + itemConcentrationWeight.getValue() + spaceWeight.getValue();
+        if (totalWeight == 0) totalWeight = 1.0; // Prevent division by zero
+
+        return (distScore * distanceWeight.getValue() +
+                itemScore * itemConcentrationWeight.getValue() +
+                spaceScore * spaceWeight.getValue()) / totalWeight;
+    }
+
+    /**
+     * Get maximum stack size for an item
+     */
+    private int getMaxStackSize(String itemId) {
+        try {
+            net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.parse(itemId);
+            net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(location);
+            if (item != null) {
+                return item.getDefaultMaxStackSize();
+            }
+        } catch (Exception e) {
+            // If error, default to 64
+        }
+        return 64; // Default max stack size
+    }
+
+    /**
+     * Calculate chest space information
+     */
+    private ChestSpaceInfo calculateChestSpace(BlockPos pos, Map<String, Integer> contents) {
+        BlockEntity be = mc.level.getBlockEntity(pos);
+        int totalSlots = getChestCapacity(be);
+
+        // Calculate used slots (counting unique items)
+        int usedSlots = contents.size();
+        int availableSlots = Math.max(0, totalSlots - usedSlots);
+
+        // Check if any existing stack has space for more items
+        boolean hasStackableSpace = false;
+        for (int count : contents.values()) {
+            if (count < 64) { // Stack not full
+                hasStackableSpace = true;
+                break;
+            }
+        }
+
+        return new ChestSpaceInfo(totalSlots, usedSlots, availableSlots, hasStackableSpace);
+    }
+
+    /**
+     * Get chest capacity (number of slots)
+     */
+    private int getChestCapacity(BlockEntity be) {
+        if (be instanceof ChestBlockEntity) {
+            // Check if double chest
+            net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
+            if (state.hasProperty(ChestBlock.TYPE)) {
+                ChestType type = state.getValue(ChestBlock.TYPE);
+                if (type == ChestType.SINGLE) return 27;
+                // For double chests, we only scan RIGHT half, which has 27 slots
+                return 27;
+            }
+            return 27;
+        } else if (be instanceof BarrelBlockEntity) {
+            return 27;
+        } else if (be instanceof ShulkerBoxBlockEntity) {
+            return 27;
+        }
+        return 27; // Default
+    }
+
+    /**
+     * Helper class to store chest space information
+     */
+    private static class ChestSpaceInfo {
+        final int totalSlots;
+        final int usedSlots;
+        final int availableSlots;
+        final boolean hasStackableSpace;
+
+        ChestSpaceInfo(int totalSlots, int usedSlots, int availableSlots, boolean hasStackableSpace) {
+            this.totalSlots = totalSlots;
+            this.usedSlots = usedSlots;
+            this.availableSlots = availableSlots;
+            this.hasStackableSpace = hasStackableSpace;
+        }
     }
 
     private void moveToNextStashTarget() {
