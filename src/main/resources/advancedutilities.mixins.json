@@ -1,0 +1,15 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.duox.advancedutilities.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "advancedutilities.refmap.json",
+  "mixins": [
+    "MixinClientPacketListener",
+    "MixinContainerScreen",
+    "MixinMinecraft"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
