@@ -1,5 +1,6 @@
 package com.duox.storagemanager.gui;
 
+import com.duox.storagemanager.gui.widgets.SlotScrollHandler;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
@@ -61,6 +62,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private Button autoStashButton;
     private Button recipeButton;
 
+    // Custom scroll handler
+    private SlotScrollHandler<ItemEntry> scrollHandler;
+
     // Data
     private List<ItemEntry> allItems = new ArrayList<>();
     private List<ItemEntry> filteredItems = new ArrayList<>();
@@ -84,6 +88,20 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         this.storageManager = manager;
         this.x = startX;
         this.y = startY;
+
+        // Initialize custom scroll handler with accessor for ItemEntry
+        this.scrollHandler = new SlotScrollHandler<>(manager, new SlotScrollHandler.ItemEntryAccessor<ItemEntry>() {
+            @Override
+            public String getId(ItemEntry entry) {
+                return entry.id;
+            }
+
+            @Override
+            public int getTotalCount(ItemEntry entry) {
+                return entry.totalCount;
+            }
+        });
+
         initComponents();
     }
 
@@ -265,16 +283,49 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         return searchBox.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
-    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        if (isMouseOver(mouseX, mouseY)) {
-            int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
-            if (totalRows <= GRID_ROWS)
-                return true;
-            float scrollStep = 1.0f / (totalRows - GRID_ROWS);
-            scrollPosition = Mth.clamp(scrollPosition - (float) delta * scrollStep, 0.0f, 1.0f);
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        System.out.println(
+                "[StoragePanel] mouseScrolled called: scrollX=" + scrollX + ", scrollY=" + scrollY + ", mouse=(" + mouseX + ", " + mouseY + ")");
+
+        if (!isMouseOver(mouseX, mouseY)) {
+            System.out.println("[StoragePanel] Mouse not over panel, ignoring scroll");
+            return false;
+        }
+
+        System.out.println("[StoragePanel] Mouse is over panel");
+
+        // PRIORITY 1: Try to handle as slot scroll (quantity adjustment)
+        int gridX = x + GRID_X_OFFSET;
+        int gridY = y + GRID_Y_OFFSET;
+
+        System.out.println("[StoragePanel] Grid coords: gridX=" + gridX + ", gridY=" + gridY);
+        System.out.println("[StoragePanel] Filtered items count: " + filteredItems.size());
+
+        boolean handledBySlot = scrollHandler.handleScroll(
+                mouseX, mouseY, scrollX, scrollY,
+                gridX, gridY,
+                SLOT_SIZE, GRID_COLS, GRID_ROWS,
+                scrollPosition, filteredItems);
+
+        System.out.println("[StoragePanel] Slot handler result: " + handledBySlot);
+
+        if (handledBySlot) {
+            System.out.println("[StoragePanel] Event handled by slot scroll");
+            return true; // Slot scroll handled, don't scroll the list
+        }
+
+        // PRIORITY 2: Fallback to normal list scrolling
+        System.out.println("[StoragePanel] Falling back to list scroll");
+        int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+        if (totalRows <= GRID_ROWS) {
+            System.out.println("[StoragePanel] Not enough rows to scroll");
             return true;
         }
-        return false;
+        float scrollStep = 1.0f / (totalRows - GRID_ROWS);
+        scrollPosition = Mth.clamp(scrollPosition - (float) scrollY * scrollStep, 0.0f, 1.0f);
+        System.out.println("[StoragePanel] List scrolled to position: " + scrollPosition);
+        return true;
     }
 
     @Override

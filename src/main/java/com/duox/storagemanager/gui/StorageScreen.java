@@ -1,5 +1,6 @@
 package com.duox.storagemanager.gui;
 
+import com.duox.storagemanager.gui.widgets.SlotScrollHandler;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
@@ -59,6 +60,9 @@ public class StorageScreen extends Screen {
     private ModernButton requestButton;
     private ModernButton autoStashButton;
 
+    // Custom scroll handler
+    private SlotScrollHandler<ItemEntry> scrollHandler;
+
     private boolean keepModuleOn = false;
     private List<ItemEntry> allItems = new ArrayList<>();
     private List<ItemEntry> filteredItems = new ArrayList<>();
@@ -70,6 +74,7 @@ public class StorageScreen extends Screen {
         ItemStack stack;
         String id;
         int totalCount;
+
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
@@ -97,7 +102,8 @@ public class StorageScreen extends Screen {
             boolean active = isActiveSupplier.getAsBoolean();
 
             int bgColor = hovered ? COLOR_BTN_HOVER_BG : COLOR_BTN_NORMAL_BG;
-            int borderColor = active ? COLOR_BTN_ACTIVE_BORDER : (hovered ? COLOR_BTN_HOVER_BORDER : COLOR_BTN_NORMAL_BORDER);
+            int borderColor = active ? COLOR_BTN_ACTIVE_BORDER
+                    : (hovered ? COLOR_BTN_HOVER_BORDER : COLOR_BTN_NORMAL_BORDER);
             int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
 
             // Fill Background
@@ -113,6 +119,19 @@ public class StorageScreen extends Screen {
     public StorageScreen(StorageManager manager) {
         super(Component.literal("Storage Terminal"));
         this.storageManager = manager;
+
+        // Initialize custom scroll handler with accessor for ItemEntry
+        this.scrollHandler = new SlotScrollHandler<>(manager, new SlotScrollHandler.ItemEntryAccessor<ItemEntry>() {
+            @Override
+            public String getId(ItemEntry entry) {
+                return entry.id;
+            }
+
+            @Override
+            public int getTotalCount(ItemEntry entry) {
+                return entry.totalCount;
+            }
+        });
     }
 
     @Override
@@ -128,7 +147,8 @@ public class StorageScreen extends Screen {
         int searchW = 150;
         int searchY = guiTop + 25; // Vị trí Y mới (dưới title)
 
-        this.searchBox = new EditBox(this.font, guiLeft + GUI_WIDTH - searchW - 10, searchY, searchW, 12, Component.literal("Search"));
+        this.searchBox = new EditBox(this.font, guiLeft + GUI_WIDTH - searchW - 10, searchY, searchW, 12,
+                Component.literal("Search"));
         this.searchBox.setMaxLength(50);
         this.searchBox.setBordered(false);
         this.searchBox.setTextColor(0xFFFFFFFF);
@@ -139,14 +159,17 @@ public class StorageScreen extends Screen {
         // UPDATE: Đặt nút xuống đáy GUI
         int btnY = guiTop + GUI_HEIGHT - 28;
 
-        this.requestButton = new ModernButton(guiLeft + GUI_WIDTH - 87, btnY, 80, 20, Component.literal("Request"), button -> {
-            if (!storageManager.isEnabled()) {
-                storageManager.setEnabled(true);
-            }
-            storageManager.startRetrieval();
-            this.keepModuleOn = true;
-            Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
-        });
+        this.requestButton = new ModernButton(guiLeft + GUI_WIDTH - 87, btnY, 80, 20, Component.literal("Request"),
+                button -> {
+                    if (!storageManager.isEnabled()) {
+                        storageManager.setEnabled(true);
+                    }
+                    storageManager.startRetrieval();
+                    this.keepModuleOn = true;
+                    Minecraft.getInstance().getSoundManager()
+                            .play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                                    .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+                });
         this.addRenderableWidget(requestButton);
 
         // AutoStash Button
@@ -154,7 +177,8 @@ public class StorageScreen extends Screen {
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             if (stash != null) {
                 stash.setEnabled(true);
-                Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+                Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                        .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
             }
         });
         this.addRenderableWidget(autoStashButton);
@@ -171,7 +195,7 @@ public class StorageScreen extends Screen {
     public void onClose() {
         if (!keepModuleOn) {
             storageManager.clearRequestQueue();
-            //storageManager.setEnabled(false);
+            // storageManager.setEnabled(false);
         }
         super.onClose();
     }
@@ -236,7 +260,7 @@ public class StorageScreen extends Screen {
 
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
-                graphics.renderOutline(x, y, SLOT_SIZE -1, SLOT_SIZE -1, COLOR_BTN_ACTIVE_BORDER);
+                graphics.renderOutline(x, y, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
             }
 
             if (isHovered) {
@@ -265,36 +289,72 @@ public class StorageScreen extends Screen {
 
         if (totalRows > visibleRows) {
             int thumbHeight = (int) ((float) (visibleRows * visibleRows) / totalRows * SLOT_SIZE);
-            if (thumbHeight < 32) thumbHeight = 32;
-            if (thumbHeight > scrollBarHeight) thumbHeight = scrollBarHeight;
+            if (thumbHeight < 32)
+                thumbHeight = 32;
+            if (thumbHeight > scrollBarHeight)
+                thumbHeight = scrollBarHeight;
 
             int thumbY = scrollBarY + (int) ((scrollBarHeight - thumbHeight) * scrollPosition);
 
-            boolean isHovered = mouseX >= scrollBarX && mouseX <= scrollBarX + 10 && mouseY >= scrollBarY && mouseY <= scrollBarY + scrollBarHeight;
-            graphics.fill(scrollBarX + 1, thumbY, scrollBarX + 9, thumbY + thumbHeight, isHovered ? COLOR_BTN_HOVER_BG : COLOR_BG_BORDER);
-            graphics.renderOutline(scrollBarX + 1, thumbY, 8, thumbHeight, isHovered ? COLOR_BTN_HOVER_BORDER : COLOR_BG_MAIN);
+            boolean isHovered = mouseX >= scrollBarX && mouseX <= scrollBarX + 10 && mouseY >= scrollBarY
+                    && mouseY <= scrollBarY + scrollBarHeight;
+            graphics.fill(scrollBarX + 1, thumbY, scrollBarX + 9, thumbY + thumbHeight,
+                    isHovered ? COLOR_BTN_HOVER_BG : COLOR_BG_BORDER);
+            graphics.renderOutline(scrollBarX + 1, thumbY, 8, thumbHeight,
+                    isHovered ? COLOR_BTN_HOVER_BORDER : COLOR_BG_MAIN);
         }
     }
 
     // --- INPUT HANDLING ---
 
-    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        System.out.println(
+                "[StorageScreen] mouseScrolled called: scrollX=" + scrollX + ", scrollY=" + scrollY + ", mouse=(" + mouseX + ", " + mouseY + ")");
+
+        // PRIORITY 1: Try to handle as slot scroll (quantity adjustment)
+        int gridX = guiLeft + GRID_X_OFFSET;
+        int gridY = guiTop + GRID_Y_OFFSET;
+
+        System.out.println("[StorageScreen] Grid coords: gridX=" + gridX + ", gridY=" + gridY);
+        System.out.println("[StorageScreen] Filtered items count: " + filteredItems.size());
+
+        boolean handledBySlot = scrollHandler.handleScroll(
+                mouseX, mouseY, scrollX, scrollY,
+                gridX, gridY,
+                SLOT_SIZE, GRID_COLS, GRID_ROWS,
+                scrollPosition, filteredItems);
+
+        System.out.println("[StorageScreen] Slot handler result: " + handledBySlot);
+
+        if (handledBySlot) {
+            System.out.println("[StorageScreen] Event handled by slot scroll");
+            return true; // Slot scroll handled, don't scroll the list
+        }
+
+        // PRIORITY 2: Fallback to normal list scrolling
+        System.out.println("[StorageScreen] Falling back to list scroll");
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
-        if (totalRows <= GRID_ROWS) return false;
+        if (totalRows <= GRID_ROWS) {
+            System.out.println("[StorageScreen] Not enough rows to scroll (" + totalRows + " <= " + GRID_ROWS + ")");
+            return false;
+        }
 
         float scrollStep = 1.0f / (totalRows - GRID_ROWS);
-        if (delta > 0) {
+        if (scrollY > 0) {
             scrollPosition -= scrollStep;
-        } else if (delta < 0) {
+        } else if (scrollY < 0) {
             scrollPosition += scrollStep;
         }
         scrollPosition = Mth.clamp(scrollPosition, 0.0f, 1.0f);
+        System.out.println("[StorageScreen] List scrolled to position: " + scrollPosition);
         return true;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (super.mouseClicked(mouseX, mouseY, button)) return true;
+        if (super.mouseClicked(mouseX, mouseY, button))
+            return true;
 
         int startX = guiLeft + GRID_X_OFFSET;
         int startY = guiTop + GRID_Y_OFFSET;
@@ -324,22 +384,28 @@ public class StorageScreen extends Screen {
     private void handleClick(ItemEntry entry, int button) {
         int change = 0;
         boolean isShift = Screen.hasShiftDown();
-        if (button == 0) change = 64; // Left
-        if (button == 1) change = 1;  // Right
-        if (isShift) change = -change;
+        if (button == 0)
+            change = 64; // Left
+        if (button == 1)
+            change = 1; // Right
+        if (isShift)
+            change = -change;
 
         int current = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
         int target = current + change;
 
-        if (target < 0) target = 0;
-        if (target > entry.totalCount) target = entry.totalCount;
+        if (target < 0)
+            target = 0;
+        if (target > entry.totalCount)
+            target = entry.totalCount;
 
         if (target == 0) {
             storageManager.getRequestQueue().remove(entry.id);
         } else {
             storageManager.getRequestQueue().put(entry.id, target);
         }
-        Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
     }
 
     // --- UTILS ---
@@ -367,7 +433,8 @@ public class StorageScreen extends Screen {
             filteredItems = new ArrayList<>(allItems);
         } else {
             filteredItems = allItems.stream()
-                    .filter(e -> e.stack.getHoverName().getString().toLowerCase().contains(query) || e.id.contains(query))
+                    .filter(e -> e.stack.getHoverName().getString().toLowerCase().contains(query)
+                            || e.id.contains(query))
                     .collect(Collectors.toList());
         }
         scrollPosition = 0.0f;
@@ -378,8 +445,10 @@ public class StorageScreen extends Screen {
     }
 
     private String shortenedCount(int count) {
-        if (count >= 1000000) return String.format("%.1fM", count / 1000000.0);
-        if (count >= 1000) return String.format("%.1fk", count / 1000.0);
+        if (count >= 1000000)
+            return String.format("%.1fM", count / 1000000.0);
+        if (count >= 1000)
+            return String.format("%.1fk", count / 1000.0);
         return String.valueOf(count);
     }
 
