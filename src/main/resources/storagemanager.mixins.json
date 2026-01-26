@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.duox.storagemanager.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "refmap": "storagemanager.refmap.json",
+  "mixins": [
+    "MixinClientPacketListener",
+    "MixinContainerScreen",
+    "MixinMinecraft",
+    "MixinMultiPlayerGameMode",
+    "MixinPlayer"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
