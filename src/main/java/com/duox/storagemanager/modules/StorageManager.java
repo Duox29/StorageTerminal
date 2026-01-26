@@ -393,9 +393,18 @@ public class StorageManager extends Module {
                 boolean isPartial = false;
 
                 if (inSlot <= needed) {
-                    // Take whole stack using Quick Move (Shift + Click)
+                    // VERIFY SPACE: Check if player inventory has space
+                    int space = InventoryUtils.calculatePlayerSpace(menu, stack);
+                    int toMove = Math.min(inSlot, space);
+
+                    if (toMove <= 0) {
+                        // Inventory full, cannot move anything
+                        continue;
+                    }
+
+                    // Take stack using Quick Move (Shift + Click)
                     InventoryUtils.quickMove(menu, i);
-                    actualTaken = inSlot;
+                    actualTaken = toMove;
                 } else {
                     // Take PARTIAL stack
                     int targetSlot = InventoryUtils.findEmptyPlayerSlot(menu, containerSlots);
