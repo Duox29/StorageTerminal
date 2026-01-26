@@ -52,14 +52,16 @@ public class StorageManager extends Module {
 
     public StorageManager() {
         super("StorageManager", "Manage items from cached chests.", Category.UTILITY);
-        this.getKeyMapping().setKey(com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_V));
+        this.getKeyMapping().setKey(
+                com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_V));
         this.addSetting(panelX);
         this.addSetting(panelY);
     }
 
     @Override
     public void onEnable() {
-        if (mc.player == null) return;
+        if (mc.player == null)
+            return;
 
         // Load cache from file if not already loaded
         ensureCacheLoaded();
@@ -143,7 +145,8 @@ public class StorageManager extends Module {
         // If cache is empty, try to load from file
         if (cache.isEmpty()) {
             Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
-            Type type = new TypeToken<Map<String, Map<String, Integer>>>(){}.getType();
+            Type type = new TypeToken<Map<String, Map<String, Integer>>>() {
+            }.getType();
             Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
 
             if (loaded != null && !loaded.isEmpty()) {
@@ -183,7 +186,8 @@ public class StorageManager extends Module {
         // Get all chests
         List<String> sortedChests = new ArrayList<>(cache.keySet());
 
-        // CUSTOM SORT: Prioritize chests with LESS items (cleaning up junk) then Distance
+        // CUSTOM SORT: Prioritize chests with LESS items (cleaning up junk) then
+        // Distance
         sortedChests.sort((s1, s2) -> {
             Map<String, Integer> c1Contents = cache.get(s1);
             Map<String, Integer> c2Contents = cache.get(s2);
@@ -208,7 +212,7 @@ public class StorageManager extends Module {
             Map<String, Integer> contents = cache.get(chestPosStr);
             BlockPos chestPos = CacheUtils.stringToPos(chestPosStr);
 
-            for (Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator(); it.hasNext(); ) {
+            for (Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator(); it.hasNext();) {
                 Map.Entry<String, Integer> req = it.next();
                 String itemId = req.getKey();
                 int needed = req.getValue();
@@ -280,13 +284,14 @@ public class StorageManager extends Module {
             } else {
                 // Nếu không còn gì để làm, mới tắt module
                 currentState = State.IDLE;
-                //this.setEnabled(false);
+                // this.setEnabled(false);
             }
         }
     }
 
     private void openTargetSilent() {
-        if (currentTarget == null) return;
+        if (currentTarget == null)
+            return;
 
         Vec3 center = Vec3.atCenterOf(currentTarget);
         BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, currentTarget, false);
@@ -322,6 +327,13 @@ public class StorageManager extends Module {
     }
 
     private void performWithdrawal() {
+        // Add artificial delay to prevent packet spam and desync
+        // This ensures the server acknowledges each transaction before we send the next
+        if (waitTimer > 0) {
+            waitTimer--;
+            return;
+        }
+
         AbstractContainerMenu menu = mc.player.containerMenu;
         int containerSlots = menu.slots.size() - 36; // inventory always last 36 slots
 
@@ -331,20 +343,24 @@ public class StorageManager extends Module {
         }
 
         Map<String, Integer> itemsToTake = currentTargetEntry.getValue();
+        boolean actionTaken = false;
 
         // Iterate through chest slots
         for (int i = 0; i < containerSlots; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
-            if (stack.isEmpty()) continue;
+            if (stack.isEmpty())
+                continue;
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 
             if (itemsToTake.containsKey(itemId)) {
                 int needed = itemsToTake.get(itemId);
-                if (needed <= 0) continue;
+                if (needed <= 0)
+                    continue;
 
                 int inSlot = stack.getCount();
                 int actualTaken = 0;
+                boolean isPartial = false;
 
                 if (inSlot <= needed) {
                     // Take whole stack using Quick Move (Shift + Click)
@@ -354,7 +370,8 @@ public class StorageManager extends Module {
                     // Take PARTIAL stack
                     int targetSlot = InventoryUtils.findEmptyPlayerSlot(menu, containerSlots);
                     if (targetSlot != -1) {
-                        // 1. Pickup source (Left Click)
+                        isPartial = true;
+                        // 1. Pickup source (Left Click) -> Hold stack
                         InventoryUtils.pickup(menu, i);
 
                         // 2. Drop 'needed' items into player slot (Right Click = Place 1)
@@ -362,26 +379,38 @@ public class StorageManager extends Module {
                             InventoryUtils.dropOne(menu, targetSlot);
                         }
 
-                        // 3. Return remainder to source (Left Click)
+                        // 3. Return remainder to source (Left Click) -> Place back
                         InventoryUtils.pickup(menu, i);
 
                         actualTaken = needed;
                     } else {
-                        // Inventory full, skip
+                        // Inventory full, unable to take partial stack, try next item or abort
                         continue;
                     }
                 }
 
                 updateCache(itemId, actualTaken);
                 itemsToTake.put(itemId, needed - actualTaken);
+
+                // CRITICAL FIX: Only process ONE stack/action per tick cycle.
+                // Breaking the loop allows the server time to process the inventory changes.
+                // Partial takes are complex and need more time (4 ticks), Quick Moves are
+                // faster (2 ticks).
+                actionTaken = true;
+                waitTimer = isPartial ? 0 : 0;
+                break;
             }
         }
 
-        currentState = State.CLOSING_CHEST;
+        // Only close if we scanned the whole chest and found nothing more to take
+        if (!actionTaken) {
+            currentState = State.CLOSING_CHEST;
+        }
     }
 
     private void updateCache(String itemId, int amountTaken) {
-        if (currentTarget == null) return;
+        if (currentTarget == null)
+            return;
 
         String chestJsonKey = CacheUtils.posToString(currentTarget);
         Map<String, Map<String, Integer>> globalCache = AutoStash.getChestCache();
