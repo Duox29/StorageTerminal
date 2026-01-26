@@ -9,7 +9,8 @@
     "MixinContainerScreen",
     "MixinMinecraft",
     "MixinMultiPlayerGameMode",
-    "MixinPlayer"
+    "MixinPlayer",
+    "MixinRecipeBookComponent"
   ],
   "injectors": {
     "defaultRequire": 1

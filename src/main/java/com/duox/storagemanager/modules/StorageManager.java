@@ -3,6 +3,7 @@ package com.duox.storagemanager.modules;
 import com.duox.storagemanager.gui.StorageScreen;
 import com.duox.storagemanager.system.Category;
 import com.duox.storagemanager.system.Module;
+import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.CacheUtils;
 import com.duox.storagemanager.utils.InventoryUtils;
@@ -54,6 +55,7 @@ public class StorageManager extends Module {
 
     public final NumberSetting panelX = new NumberSetting("Panel X", 300, 0, 2560, 1);
     public final NumberSetting panelY = new NumberSetting("Panel Y", 100, 0, 1440, 1);
+    public final BooleanSetting autoRequestRecipe = new BooleanSetting("Auto-Request Recipes", true);
 
     public StorageManager() {
         super("StorageManager", "Manage items from cached chests.", Category.UTILITY);
@@ -61,6 +63,7 @@ public class StorageManager extends Module {
                 com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_V));
         this.addSetting(panelX);
         this.addSetting(panelY);
+        this.addSetting(autoRequestRecipe);
     }
 
     @Override

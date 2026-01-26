@@ -59,6 +59,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private EditBox searchBox;
     private Button requestButton;
     private Button autoStashButton;
+    private Button recipeButton;
 
     // Data
     private List<ItemEntry> allItems = new ArrayList<>();
@@ -70,6 +71,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         ItemStack stack;
         String id;
         int totalCount;
+
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
@@ -87,7 +89,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     private void initComponents() {
         int searchW = 120;
-        this.searchBox = new EditBox(mc.font, x + PANEL_WIDTH - searchW - 10, y + 25, searchW, 12, Component.literal("Search"));
+        this.searchBox = new EditBox(mc.font, x + PANEL_WIDTH - searchW - 10, y + 25, searchW, 12,
+                Component.literal("Search"));
         this.searchBox.setMaxLength(50);
         this.searchBox.setBordered(false);
         this.searchBox.setTextColor(0xFFFFFFFF);
@@ -96,16 +99,33 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         int btnY = y + PANEL_HEIGHT - 25;
         this.requestButton = Button.builder(Component.literal("Req"), b -> {
             storageManager.startRetrieval();
-            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                    .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
         }).bounds(x + 10, btnY, 40, 18).build();
 
         this.autoStashButton = Button.builder(Component.literal("Stash"), b -> {
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-            if (stash != null) stash.setEnabled(true);
-            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            if (stash != null)
+                stash.setEnabled(true);
+            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                    .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
         }).bounds(x + PANEL_WIDTH - 50, btnY, 40, 18).build();
 
+        this.recipeButton = Button.builder(getRecipeLabel(), b -> {
+            boolean current = storageManager.autoRequestRecipe.getValue();
+            storageManager.autoRequestRecipe.setValue(!current);
+            b.setMessage(getRecipeLabel());
+            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                    .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        }).bounds(x + 55, btnY, 70, 18).build();
+
         refreshItemList();
+    }
+
+    private Component getRecipeLabel() {
+        boolean on = storageManager.autoRequestRecipe.getValue();
+        return Component.literal("Recipe: " + (on ? "ON" : "OFF"))
+                .withStyle(on ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.RED);
     }
 
     @Override
@@ -135,12 +155,14 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         }
 
         // 4. Search Box BG
-        graphics.fill(searchBox.getX() - 2, searchBox.getY() - 2, searchBox.getX() + searchBox.getWidth() + 2, searchBox.getY() + 14, 0xFF000000);
+        graphics.fill(searchBox.getX() - 2, searchBox.getY() - 2, searchBox.getX() + searchBox.getWidth() + 2,
+                searchBox.getY() + 14, 0xFF000000);
 
         // 5. Render Components
         searchBox.render(graphics, mouseX, mouseY, partialTick);
         requestButton.render(graphics, mouseX, mouseY, partialTick);
         autoStashButton.render(graphics, mouseX, mouseY, partialTick);
+        recipeButton.render(graphics, mouseX, mouseY, partialTick);
 
         // 6. Scrollbar
         renderScrollbar(graphics, mouseX, mouseY);
@@ -174,7 +196,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             // Queue overlay
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
-                graphics.renderOutline(sx, sy, SLOT_SIZE -1, SLOT_SIZE -1, 0xFF00FF00);
+                graphics.renderOutline(sx, sy, SLOT_SIZE - 1, SLOT_SIZE - 1, 0xFF00FF00);
             }
 
             if (isHovered) {
@@ -182,7 +204,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 Item.TooltipContext context = Item.TooltipContext.of(mc.level);
                 tooltip.addAll(entry.stack.getTooltipLines(context, mc.player, TooltipFlag.NORMAL));
                 tooltip.add(Component.literal("§7Stored: §f" + entry.totalCount));
-                if (queued > 0) tooltip.add(Component.literal("§eRequesting: " + queued));
+                if (queued > 0)
+                    tooltip.add(Component.literal("§eRequesting: " + queued));
                 graphics.renderTooltip(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
             }
         }
@@ -208,15 +231,20 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (!isMouseOver(mouseX, mouseY)) return false;
+        if (!isMouseOver(mouseX, mouseY))
+            return false;
 
         // 1. Components
         if (searchBox.mouseClicked(mouseX, mouseY, button)) {
             setFocusedListener(searchBox);
             return true;
         }
-        if (requestButton.mouseClicked(mouseX, mouseY, button)) return true;
-        if (autoStashButton.mouseClicked(mouseX, mouseY, button)) return true;
+        if (requestButton.mouseClicked(mouseX, mouseY, button))
+            return true;
+        if (autoStashButton.mouseClicked(mouseX, mouseY, button))
+            return true;
+        if (recipeButton.mouseClicked(mouseX, mouseY, button))
+            return true;
 
         // 3. Grid
         handleGridClick(mouseX, mouseY, button);
@@ -228,7 +256,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
         return searchBox.mouseReleased(mouseX, mouseY, button) ||
                 requestButton.mouseReleased(mouseX, mouseY, button) ||
-                autoStashButton.mouseReleased(mouseX, mouseY, button);
+                autoStashButton.mouseReleased(mouseX, mouseY, button) ||
+                recipeButton.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
@@ -239,9 +268,10 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (isMouseOver(mouseX, mouseY)) {
             int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
-            if (totalRows <= GRID_ROWS) return true;
+            if (totalRows <= GRID_ROWS)
+                return true;
             float scrollStep = 1.0f / (totalRows - GRID_ROWS);
-            scrollPosition = Mth.clamp(scrollPosition - (float)delta * scrollStep, 0.0f, 1.0f);
+            scrollPosition = Mth.clamp(scrollPosition - (float) delta * scrollStep, 0.0f, 1.0f);
             return true;
         }
         return false;
@@ -271,17 +301,29 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     // --- Narration / Focus Boilerplate ---
     @Override
-    public void setFocused(boolean focused) { this.isFocused = focused; }
+    public void setFocused(boolean focused) {
+        this.isFocused = focused;
+    }
+
     @Override
-    public boolean isFocused() { return isFocused; }
+    public boolean isFocused() {
+        return isFocused;
+    }
+
     @Override
-    public NarratableEntry.NarrationPriority narrationPriority() { return NarrationPriority.NONE; }
+    public NarratableEntry.NarrationPriority narrationPriority() {
+        return NarrationPriority.NONE;
+    }
+
     @Override
-    public void updateNarration(NarrationElementOutput narrationElementOutput) {}
+    public void updateNarration(NarrationElementOutput narrationElementOutput) {
+    }
 
     public void setFocusedListener(GuiEventListener listener) {
-        if (listener == searchBox) searchBox.setFocused(true);
-        else searchBox.setFocused(false);
+        if (listener == searchBox)
+            searchBox.setFocused(true);
+        else
+            searchBox.setFocused(false);
     }
 
     // --- UTILS ---
@@ -289,7 +331,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         int startX = x + GRID_X_OFFSET;
         int startY = y + GRID_Y_OFFSET;
         if (mouseX < startX || mouseX > startX + (GRID_COLS * SLOT_SIZE) ||
-                mouseY < startY || mouseY > startY + (GRID_ROWS * SLOT_SIZE)) return;
+                mouseY < startY || mouseY > startY + (GRID_ROWS * SLOT_SIZE))
+            return;
 
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         int startRow = (int) (scrollPosition * Math.max(0, totalRows - GRID_ROWS));
@@ -300,15 +343,19 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (index >= 0 && index < filteredItems.size()) {
             ItemEntry entry = filteredItems.get(index);
             int change = (button == 0) ? 64 : 1;
-            if (Screen.hasShiftDown()) change = -change;
+            if (Screen.hasShiftDown())
+                change = -change;
 
             int current = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             int target = Math.max(0, Math.min(entry.totalCount, current + change));
 
-            if (target == 0) storageManager.getRequestQueue().remove(entry.id);
-            else storageManager.getRequestQueue().put(entry.id, target);
+            if (target == 0)
+                storageManager.getRequestQueue().remove(entry.id);
+            else
+                storageManager.getRequestQueue().put(entry.id, target);
 
-            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            mc.getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                    .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
         }
     }
 
@@ -328,18 +375,26 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         filterItems();
     }
 
-    private void onSearchChanged(String text) { filterItems(); }
+    private void onSearchChanged(String text) {
+        filterItems();
+    }
 
     private void filterItems() {
         String query = searchBox.getValue().toLowerCase();
-        if (query.isEmpty()) filteredItems = new ArrayList<>(allItems);
-        else filteredItems = allItems.stream().filter(e -> e.stack.getHoverName().getString().toLowerCase().contains(query)).collect(Collectors.toList());
+        if (query.isEmpty())
+            filteredItems = new ArrayList<>(allItems);
+        else
+            filteredItems = allItems.stream()
+                    .filter(e -> e.stack.getHoverName().getString().toLowerCase().contains(query))
+                    .collect(Collectors.toList());
         scrollPosition = 0.0f;
     }
 
     private String shortenedCount(int count) {
-        if (count >= 1000000) return String.format("%.1fM", count / 1000000.0);
-        if (count >= 1000) return String.format("%.1fk", count / 1000.0);
+        if (count >= 1000000)
+            return String.format("%.1fM", count / 1000000.0);
+        if (count >= 1000)
+            return String.format("%.1fk", count / 1000.0);
         return String.valueOf(count);
     }
 }
