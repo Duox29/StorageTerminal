@@ -17,6 +17,10 @@ import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+import net.minecraft.world.level.block.CraftingTableBlock;
+import net.minecraft.world.level.block.state.BlockState;
 
 import java.lang.reflect.Type;
 import java.nio.file.Path;
@@ -43,6 +47,7 @@ public class StorageManager extends Module {
 
     private State currentState = State.IDLE;
     private BlockPos currentTarget = null;
+    private BlockPos returnToContainerPos = null;
     private int waitTimer = 0;
     private int silentContainerId = -1;
     private boolean containerReady = false;
@@ -131,7 +136,27 @@ public class StorageManager extends Module {
             sendMessage("Queue is empty.");
             return;
         }
+
+        // Check for open crafting table and save its position
+        captureCraftingTableContext();
+
         currentState = State.PLANNING;
+    }
+
+    private void captureCraftingTableContext() {
+        if (mc.screen instanceof CraftingScreen) {
+            HitResult hit = mc.hitResult;
+            if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
+                BlockHitResult blockHit = (BlockHitResult) hit;
+                BlockPos pos = blockHit.getBlockPos();
+                if (mc.level != null) {
+                    BlockState state = mc.level.getBlockState(pos);
+                    if (state.getBlock() instanceof CraftingTableBlock) {
+                        returnToContainerPos = pos;
+                    }
+                }
+            }
+        }
     }
 
     // --- Internal Logic ---
@@ -162,6 +187,7 @@ public class StorageManager extends Module {
     private void resetState() {
         currentState = State.IDLE;
         currentTarget = null;
+        returnToContainerPos = null;
         silentContainerId = -1;
         containerReady = false;
         retrievalPlan.clear();
@@ -283,6 +309,10 @@ public class StorageManager extends Module {
                 currentState = State.PLANNING;
             } else {
                 // Nếu không còn gì để làm, mới tắt module
+                if (returnToContainerPos != null) {
+                    openReturnContainer();
+                    returnToContainerPos = null;
+                }
                 currentState = State.IDLE;
                 // this.setEnabled(false);
             }
@@ -302,7 +332,7 @@ public class StorageManager extends Module {
         mc.player.swing(InteractionHand.MAIN_HAND);
 
         currentState = State.WAITING_FOR_OPEN;
-        waitTimer = 20;
+        waitTimer = 11;
     }
 
     private void waitForContainer() {
@@ -437,6 +467,17 @@ public class StorageManager extends Module {
         containerReady = false;
 
         moveToNextTarget();
+    }
+
+    private void openReturnContainer() {
+        if (returnToContainerPos == null)
+            return;
+
+        Vec3 center = Vec3.atCenterOf(returnToContainerPos);
+        BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, returnToContainerPos, false);
+
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
+        mc.player.swing(InteractionHand.MAIN_HAND);
     }
 
     private void sendMessage(String message) {
