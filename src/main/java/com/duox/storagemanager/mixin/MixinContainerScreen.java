@@ -11,6 +11,7 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AbstractContainerScreen.class)
 public abstract class MixinContainerScreen extends Screen {
@@ -36,6 +37,13 @@ public abstract class MixinContainerScreen extends Screen {
             // QUAN TRỌNG: Thêm Panel như một Widget chính thống
             // Việc này tự động kích hoạt render, click, scroll, tooltip cho Panel
             this.addRenderableWidget(storagePanel);
+        }
+    }
+
+    @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
+    private void onMouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY, CallbackInfoReturnable<Boolean> cir) {
+        if (storagePanel != null && storagePanel.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
+            cir.setReturnValue(true);
         }
     }
 

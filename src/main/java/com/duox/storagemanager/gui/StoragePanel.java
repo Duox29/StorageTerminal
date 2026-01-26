@@ -69,7 +69,12 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private List<ItemEntry> allItems = new ArrayList<>();
     private List<ItemEntry> filteredItems = new ArrayList<>();
     private float scrollPosition = 0.0f;
-    private boolean isFocused = false;
+
+    // Drag Support
+    private boolean isDragging = false;
+    private int dragOffsetX = 0;
+    private int dragOffsetY = 0;
+    private boolean widgetFocused = false;
 
     private static class ItemEntry {
         ItemStack stack;
@@ -140,6 +145,22 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         refreshItemList();
     }
 
+    private void repositionComponents() {
+        int searchW = 120;
+        searchBox.setX(x + PANEL_WIDTH - searchW - 10);
+        searchBox.setY(y + 25);
+
+        int btnY = y + PANEL_HEIGHT - 25;
+        requestButton.setX(x + 10);
+        requestButton.setY(btnY);
+
+        autoStashButton.setX(x + PANEL_WIDTH - 50);
+        autoStashButton.setY(btnY);
+
+        recipeButton.setX(x + 55);
+        recipeButton.setY(btnY);
+    }
+
     private Component getRecipeLabel() {
         boolean on = storageManager.autoRequestRecipe.getValue();
         return Component.literal("Recipe: " + (on ? "ON" : "OFF"))
@@ -156,8 +177,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         graphics.fill(x, y, x + PANEL_WIDTH, y + PANEL_HEIGHT, COLOR_BG_MAIN);
         graphics.renderOutline(x, y, PANEL_WIDTH, PANEL_HEIGHT, COLOR_BG_BORDER);
 
-        // 2. Header
-        graphics.fill(x, y, x + PANEL_WIDTH, y + HEADER_HEIGHT, COLOR_HEADER);
+        // 2. Header - with hover effect to indicate draggable
+        boolean isHeaderHovered = mouseX >= x && mouseX <= x + PANEL_WIDTH &&
+                                   mouseY >= y && mouseY <= y + HEADER_HEIGHT;
+        int headerColor = isHeaderHovered ? COLOR_HEADER_HOVER : COLOR_HEADER;
+        graphics.fill(x, y, x + PANEL_WIDTH, y + HEADER_HEIGHT, headerColor);
         graphics.drawString(mc.font, "Storage Terminal", x + 5, y + 6, 0xFFE0E0E0, false);
 
         // Vẽ thêm một cái viền nhỏ dưới header để tách biệt
@@ -252,7 +276,20 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (!isMouseOver(mouseX, mouseY))
             return false;
 
-        // 1. Components
+        // PRIORITY 1: Check if clicking on header for dragging (must be FIRST!)
+        // Only drag from the left portion of header to avoid conflicts with searchBox
+        int headerDragWidth = PANEL_WIDTH - 130; // Leave space for searchBox on the right
+        if (button == 0 && mouseX >= x && mouseX <= x + headerDragWidth &&
+            mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
+            isDragging = true;
+            widgetFocused = true; // IMPORTANT: Set focused so mouseDragged gets called
+            dragOffsetX = (int) (mouseX - x);
+            dragOffsetY = (int) (mouseY - y);
+            System.out.println("[StoragePanel] Started dragging at offset: " + dragOffsetX + ", " + dragOffsetY);
+            return true;
+        }
+
+        // PRIORITY 2: Components
         if (searchBox.mouseClicked(mouseX, mouseY, button)) {
             setFocusedListener(searchBox);
             return true;
@@ -264,7 +301,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (recipeButton.mouseClicked(mouseX, mouseY, button))
             return true;
 
-        // 3. Grid
+        // PRIORITY 3: Grid
         handleGridClick(mouseX, mouseY, button);
 
         return true;
@@ -272,6 +309,16 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (isDragging && button == 0) {
+            isDragging = false;
+            widgetFocused = false; // Release focus
+            // Save position to config
+            storageManager.panelX.setValue((double) x);
+            storageManager.panelY.setValue((double) y);
+            System.out.println("[StoragePanel] Drag ended. Saved position: " + x + ", " + y);
+            return true;
+        }
+
         return searchBox.mouseReleased(mouseX, mouseY, button) ||
                 requestButton.mouseReleased(mouseX, mouseY, button) ||
                 autoStashButton.mouseReleased(mouseX, mouseY, button) ||
@@ -280,6 +327,18 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (isDragging && button == 0) {
+            // Update panel position
+            x = (int) (mouseX - dragOffsetX);
+            y = (int) (mouseY - dragOffsetY);
+
+            System.out.println("[StoragePanel] Dragging to position: " + x + ", " + y);
+
+            // Reposition all components to follow the panel
+            repositionComponents();
+            return true;
+        }
+
         return searchBox.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
@@ -350,17 +409,17 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 mouseY >= y && mouseY <= y + PANEL_HEIGHT;
     }
 
-    // --- Narration / Focus Boilerplate ---
     @Override
     public void setFocused(boolean focused) {
-        this.isFocused = focused;
+        this.widgetFocused = focused;
     }
 
     @Override
     public boolean isFocused() {
-        return isFocused;
+        return this.widgetFocused || this.isDragging;
     }
 
+    // --- Narration / Focus Boilerplate ---
     @Override
     public NarratableEntry.NarrationPriority narrationPriority() {
         return NarrationPriority.NONE;
