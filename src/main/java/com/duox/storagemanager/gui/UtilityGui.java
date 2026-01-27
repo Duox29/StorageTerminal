@@ -202,4 +202,8 @@ public class UtilityGui extends Screen {
         g.fill(x, y, x + w, y + h, c);
         g.drawCenteredString(this.font, t, x + w / 2, y + 8, s ? 0xFFFF00 : 0xAAAAAA);
     }
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Để trống để tắt hoàn toàn background blur
+    }
 }

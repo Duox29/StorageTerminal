@@ -4,7 +4,7 @@ plugins {
     id 'idea'
     id 'maven-publish'
     // NeoGradle or ModDevGradle
-    id 'net.neoforged.moddev' version '1.0.18'
+    id 'net.neoforged.moddev' version '2.0.140'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -17,9 +17,17 @@ group = mod_group_id
 
 repositories {
     mavenLocal()
+    maven {
+        name = "NeoForged"
+        url = "https://maven.neoforged.net/releases"
+    }
     mavenCentral()
     flatDir {
         dirs 'libs'
+    }
+    maven {
+        name = "Mojang"
+        url = "https://libraries.minecraft.net/"
     }
 }
 

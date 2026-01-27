@@ -12,7 +12,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 
@@ -60,7 +60,7 @@ public class ItemListWidget extends SettingWidget {
             String val = idInput.getValue();
             if (val != null && !val.isEmpty()) {
                 try {
-                    ResourceLocation rl = ResourceLocation.tryParse(val.contains(":") ? val : "minecraft:" + val);
+                    Identifier rl = Identifier.tryParse(val.contains(":") ? val : "minecraft:" + val);
                     if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
                         setting.add(BuiltInRegistries.ITEM.get(rl));
                         ConfigManager.getInstance().save();

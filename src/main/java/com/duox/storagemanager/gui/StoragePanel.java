@@ -89,8 +89,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
-            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));
-            this.stack = new ItemStack(item);
+            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id))
+                    .map(net.minecraft.core.Holder::value) // Extract Item from Holder
+                    .orElse(net.minecraft.world.item.Items.AIR);            this.stack = new ItemStack(item);
         }
     }
 
@@ -259,16 +260,14 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             if (isHovered) {
                 graphics.fill(sx, sy, sx + SLOT_SIZE - 1, sy + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
             }
-            graphics.pose().pushPose();
+            graphics.pose().pushMatrix();
             // Translate to slot + padding
-            graphics.pose().translate(sx + 1, sy + 1, 0);
-            // Scale
-            graphics.pose().scale(itemScale, itemScale, 1.0f);
-
+            graphics.pose().translate(sx + 1, sy + 1);            // Scale
+            graphics.pose().scale(itemScale, itemScale);
             graphics.renderItem(entry.stack, 0, 0);
             graphics.renderItemDecorations(mc.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
 
-            graphics.pose().popPose();
+            graphics.pose().popMatrix();
             // Queue overlay
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
@@ -282,8 +281,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 tooltip.add(Component.literal("§7Stored: §f" + entry.totalCount));
                 if (queued > 0)
                     tooltip.add(Component.literal("§eRequesting: " + queued));
-                graphics.renderTooltip(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
-            }
+                graphics.setTooltipForNextFrame(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);            }
         }
     }
 

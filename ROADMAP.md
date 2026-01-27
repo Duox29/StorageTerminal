@@ -396,7 +396,7 @@ Chest at 100,64,200 in Nether
    public static ResourceKey<Level> getDimensionFromString(String s) {
        String[] parts = s.split(",");
        if (parts.length >= 4) {
-           return ResourceKey.create(Registries.DIMENSION, new ResourceLocation(parts[3]));
+           return ResourceKey.create(Registries.DIMENSION, new Identifier(parts[3]));
        }
        return Level.OVERWORLD; // Default
    }

@@ -17,7 +17,7 @@
  - 47.3.32 Add fast graphics render type to block model jsons (#10393)
            Make modded leaves behave like vanilla leaves by default (Fixes #10389)
  - 47.3.31 Fix invalidly symlinked worlds crashing on level select (#10439)
- - 47.3.30 Backport even more future ResourceLocation methods (#10428)
+ - 47.3.30 Backport even more future Identifier methods (#10428)
  - 47.3.29 Ensure NetworkConstants is loaded before mod construction (#10407)
  - 47.3.28 Account for problematic mixins in VillagerTrades.EmeraldsForVillagerTypeItem (#10402)
  - 47.3.27 Fix incorrect method reference in TntBlock.explode()
@@ -30,7 +30,7 @@
  - 47.3.22 Bump CoreMods to 5.2.4 (#10263)
  - 47.3.21 Allow mipmap lowering to be disabled (#10252)
  - 47.3.20 Add optional fix of use item duration, disabled by default (#10246)
- - 47.3.19 Backport some Vanilla 1.21 `ResourceLocation` methods (#10241)
+ - 47.3.19 Backport some Vanilla 1.21 `Identifier` methods (#10241)
            Co-authored-by: Paint_Ninja <PaintNinja@users.noreply.github.com>
  - 47.3.18 Simplify memory usage display on loading screen (#10233)
            Co-authored-by: Paint_Ninja <PaintNinja@users.noreply.github.com>

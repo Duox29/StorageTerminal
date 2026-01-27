@@ -6,7 +6,7 @@ package com.duox.storagemanager.system.settings;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 
 import java.util.LinkedHashMap;
@@ -40,7 +40,7 @@ public class ItemListSetting extends Setting<LinkedHashMap<Item, Boolean>> {
     public JsonElement save() {
         JsonObject map = new JsonObject();
         this.value.forEach((item, enabled) -> {
-            ResourceLocation key = BuiltInRegistries.ITEM.getKey(item);
+            Identifier key = BuiltInRegistries.ITEM.getKey(item);
             if (key != null) map.addProperty(key.toString(), enabled);
         });
         return map;
@@ -54,7 +54,7 @@ public class ItemListSetting extends Setting<LinkedHashMap<Item, Boolean>> {
         JsonObject obj = element.getAsJsonObject();
 
         for (String key : obj.keySet()) {
-            ResourceLocation rl = ResourceLocation.tryParse(key);
+            Identifier rl = Identifier.tryParse(key);
             if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
                 newMap.put(BuiltInRegistries.ITEM.get(rl), obj.get(key).getAsBoolean());
             }

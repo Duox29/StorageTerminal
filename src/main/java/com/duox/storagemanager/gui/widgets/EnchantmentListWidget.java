@@ -13,12 +13,14 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.item.EnchantedBookItem;
+import net.minecraft.resources.Identifier;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.ItemEnchantments;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.enchantment.Enchantment;
 import net.minecraft.world.item.enchantment.EnchantmentInstance;
-
+import net.minecraft.resources.ResourceKey;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -81,11 +83,12 @@ public class EnchantmentListWidget extends SettingWidget {
             if (val != null && !val.isEmpty()) {
                 try {
                     String id = val.contains(":") ? val : "minecraft:" + val;
-                    ResourceLocation rl = ResourceLocation.tryParse(id);
+                    Identifier rl = Identifier.tryParse(id);
                     
                     if (rl != null && mc.level != null) {
-                        Optional<Holder.Reference<Enchantment>> optionalEnch = mc.level.registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolder(rl);
-                        
+                        var registryLookup = mc.level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+                        var key = ResourceKey.create(Registries.ENCHANTMENT, rl);
+                        Optional<Holder.Reference<Enchantment>> optionalEnch = registryLookup.get(key);
                         if (optionalEnch.isPresent()) {
                             int lvl = 1;
                             int price = 64;
@@ -138,11 +141,12 @@ public class EnchantmentListWidget extends SettingWidget {
             EnchantmentData data = entry.getValue();
             boolean enabled = data.enabled;
             
-            ResourceLocation rl = ResourceLocation.tryParse(enchantId);
+            Identifier rl = Identifier.tryParse(enchantId);
             if (rl == null) continue;
-            
-            Optional<Holder.Reference<Enchantment>> optionalEnch = mc.level.registryAccess().registryOrThrow(Registries.ENCHANTMENT).getHolder(rl);
-            if (optionalEnch.isEmpty()) continue;
+
+            var registryLookup = mc.level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+            var key = ResourceKey.create(Registries.ENCHANTMENT, rl);
+            Optional<Holder.Reference<Enchantment>> optionalEnch = registryLookup.get(key);            if (optionalEnch.isEmpty()) continue;
             Holder<Enchantment> enchantHolder = optionalEnch.get();
             Enchantment enchant = enchantHolder.value();
 
@@ -159,11 +163,13 @@ public class EnchantmentListWidget extends SettingWidget {
                         
                 List<Component> tooltips = new ArrayList<>();
                 for (String line : tooltip.split("\n")) tooltips.add(Component.literal(line));
-                
-                guiGraphics.renderComponentTooltip(mc.font, tooltips, mouseX, mouseY);
-            }
 
-            ItemStack book = EnchantedBookItem.createForEnchantment(new EnchantmentInstance(enchantHolder, data.minLevel));
+                guiGraphics.setComponentTooltipForNextFrame(mc.font, tooltips, mouseX, mouseY);           }
+
+            ItemStack book = new ItemStack(Items.ENCHANTED_BOOK);
+            ItemEnchantments.Mutable mutableEnchants = new ItemEnchantments.Mutable(ItemEnchantments.EMPTY);
+            mutableEnchants.set(enchantHolder, data.minLevel);
+            book.set(DataComponents.STORED_ENCHANTMENTS, mutableEnchants.toImmutable());
             guiGraphics.renderItem(book, currentX, currentY);
 
             currentX += ITEM_SIZE;

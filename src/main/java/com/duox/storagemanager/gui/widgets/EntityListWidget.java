@@ -1,4 +1,5 @@
 package com.duox.storagemanager.gui.widgets;
+
 /*
  * Widget for managing an EntityListSetting.
  * Supports adding/removing entity types.
@@ -12,10 +13,10 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.item.SpawnEggItem;
-import net.neoforged.neoforge.common.DeferredSpawnEggItem;
+import net.minecraft.world.item.SpawnEggItem; // Sử dụng class gốc của Minecraft
+// import net.neoforged.neoforge.common.DeferredSpawnEggItem; // XÓA DÒNG NÀY
 
 import java.util.ArrayList;
 import java.util.List;
@@ -71,12 +72,22 @@ public class EntityListWidget extends SettingWidget {
             String val = idInput.getValue();
             if (val != null && !val.isEmpty()) {
                 try {
-                    ResourceLocation rl = ResourceLocation.tryParse(val.contains(":") ? val : "minecraft:" + val);
-                    if (rl != null && BuiltInRegistries.ENTITY_TYPE.containsKey(rl)) {
-                        setting.add(BuiltInRegistries.ENTITY_TYPE.get(rl));
-                        ConfigManager.getInstance().save();
-                        idInput.setValue("");
-                        if (onRefreshCallback != null) onRefreshCallback.run(); // Trigger layout update
+                    // 1. Parse ID
+                    Identifier rl = Identifier.tryParse(val.contains(":") ? val : "minecraft:" + val);
+
+                    if (rl != null) {
+                        // 2. Lấy Optional từ Registry
+                        var optionalType = BuiltInRegistries.ENTITY_TYPE.get(rl);
+
+                        // 3. Kiểm tra tồn tại và unwrap
+                        if (optionalType.isPresent()) {
+                            // .get() lấy Holder, .value() lấy EntityType thực sự
+                            setting.add(optionalType.get().value());
+
+                            ConfigManager.getInstance().save();
+                            idInput.setValue("");
+                            if (onRefreshCallback != null) onRefreshCallback.run();
+                        }
                     }
                 } catch (Exception ignored) {}
             }
@@ -110,10 +121,14 @@ public class EntityListWidget extends SettingWidget {
 
             if (mouseX >= currentX && mouseX <= currentX + 16 && mouseY >= currentY && mouseY <= currentY + 16) {
                 guiGraphics.renderOutline(currentX, currentY, 16, 16, 0xFFFFFFFF);
-                guiGraphics.renderTooltip(mc.font, Component.literal(type.getDescription().getString() + (enabled ? " [ON]" : " [OFF]")), mouseX, mouseY);
+
+                // FIX 1.21.4: Dùng setTooltipForNextFrame thay vì renderTooltip
+                guiGraphics.setTooltipForNextFrame(mc.font, Component.literal(type.getDescription().getString() + (enabled ? " [ON]" : " [OFF]")), mouseX, mouseY);
             }
 
-            SpawnEggItem eggItem = DeferredSpawnEggItem.byId(type);
+            // FIX 1.21.3+: Sử dụng SpawnEggItem.byId() thay vì DeferredSpawnEggItem.byId()
+            SpawnEggItem eggItem = SpawnEggItem.byId(type);
+
             if (eggItem != null) {
                 guiGraphics.renderItem(eggItem.getDefaultInstance(), currentX, currentY);
             } else {

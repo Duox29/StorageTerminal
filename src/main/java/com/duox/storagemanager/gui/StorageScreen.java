@@ -83,7 +83,7 @@ public class StorageScreen extends Screen {
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
-            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.ResourceLocation.parse(id));
+            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id));
             this.stack = new ItemStack(item);
         }
     }
@@ -273,7 +273,7 @@ public class StorageScreen extends Screen {
             refreshItemList();
             AutoStash.cacheDirty = false; // Đã xử lý xong
         }
-        this.renderBackground(graphics, mouseX, mouseY, partialTick);
+        //this.renderBackground(graphics, mouseX, mouseY, partialTick);
 
         // 1. Main GUI Panel
         graphics.fill(guiLeft, guiTop, guiLeft + GUI_WIDTH, guiTop + GUI_HEIGHT, COLOR_BG_MAIN);
@@ -584,5 +584,9 @@ public class StorageScreen extends Screen {
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        // Để trống để tắt hoàn toàn background blur
     }
 }

@@ -364,7 +364,7 @@ public class AutoStash extends Module {
      */
     private int getMaxStackSize(String itemId) {
         try {
-            net.minecraft.resources.ResourceLocation location = net.minecraft.resources.ResourceLocation.parse(itemId);
+            net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.parse(itemId);
             net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(location);
             if (item != null) {
                 return item.getDefaultMaxStackSize();

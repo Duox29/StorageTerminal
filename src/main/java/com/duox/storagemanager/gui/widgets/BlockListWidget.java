@@ -9,7 +9,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 
@@ -58,7 +58,7 @@ public class BlockListWidget extends SettingWidget {
         Button btnAddId = Button.builder(Component.literal("Add"), b -> {
             String val = idInput.getValue();
             if (val != null && !val.isEmpty()) {
-                ResourceLocation rl = ResourceLocation.tryParse(val.contains(":") ? val : "minecraft:" + val);
+                Identifier rl = Identifier.tryParse(val.contains(":") ? val : "minecraft:" + val);
                 if (rl != null && BuiltInRegistries.BLOCK.containsKey(rl)) {
                     setting.add(BuiltInRegistries.BLOCK.get(rl));
                     ConfigManager.getInstance().save();

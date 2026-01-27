@@ -6,7 +6,7 @@ package com.duox.storagemanager.system.settings;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 // import net.minecraft.core.registries.BuiltInRegistries;
-// import net.minecraft.resources.ResourceLocation;
+// import net.minecraft.resources.Identifier;
 // import net.minecraft.world.item.enchantment.Enchantment;
 
 import java.util.LinkedHashMap;

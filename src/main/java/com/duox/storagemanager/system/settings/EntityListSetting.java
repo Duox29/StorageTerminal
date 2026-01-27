@@ -6,7 +6,7 @@ package com.duox.storagemanager.system.settings;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.ResourceLocation;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
 
 import java.util.LinkedHashMap;
@@ -42,7 +42,7 @@ public class EntityListSetting extends Setting<LinkedHashMap<EntityType<?>, Bool
     public JsonElement save() {
         JsonObject map = new JsonObject();
         this.value.forEach((type, enabled) -> {
-            ResourceLocation key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+            Identifier key = BuiltInRegistries.ENTITY_TYPE.getKey(type);
             if (key != null) map.addProperty(key.toString(), enabled);
         });
         return map;
@@ -57,7 +57,7 @@ public class EntityListSetting extends Setting<LinkedHashMap<EntityType<?>, Bool
 
         for (String key : obj.keySet()) {
             // Safe parsing to avoid crashes if config contains invalid IDs
-            ResourceLocation rl = ResourceLocation.tryParse(key);
+            Identifier rl = Identifier.tryParse(key);
             if (rl != null && BuiltInRegistries.ENTITY_TYPE.containsKey(rl)) {
                 newMap.put(BuiltInRegistries.ENTITY_TYPE.get(rl), obj.get(key).getAsBoolean());
             }
