@@ -72,6 +72,9 @@ public class StorageManager extends Module {
     public final NumberSetting screenGridCols = new NumberSetting("Screen Columns", 9, 4, 16, 1);
     public final NumberSetting screenGridRows = new NumberSetting("Screen Rows", 9, 4, 16, 1);
 
+    // Scan Range setting for filtering active cache
+    public final NumberSetting scanRange = new NumberSetting("Scan Range", 16.0, 4.0, 64.0, 1.0);
+
     public StorageManager() {
         super("StorageManager", "Manage items from cached chests.", Category.UTILITY);
         this.getKeyMapping().setKey(
@@ -85,15 +88,13 @@ public class StorageManager extends Module {
         this.addSetting(screenScale);
         this.addSetting(screenGridCols);
         this.addSetting(screenGridRows);
+        this.addSetting(scanRange);
     }
 
     @Override
     public void onEnable() {
         if (mc.player == null)
             return;
-
-        // Load cache from file if not already loaded
-        ensureCacheLoaded();
 
         if (mc.screen == null) {
             mc.setScreen(new StorageScreen(this));
@@ -187,19 +188,30 @@ public class StorageManager extends Module {
 
     /**
      * Load cache from file if not already loaded
+     * PUBLIC so it can be called from StorageScreen constructor
      */
-    private void ensureCacheLoaded() {
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
+    public void ensureCacheLoaded() {
+        Map<String, Map<String, Integer>> globalBuffer = AutoStash.getGlobalBuffer();
 
-        // If cache is empty, try to load from file
-        if (cache.isEmpty()) {
+        // If globalBuffer is empty, try to load from file
+        if (globalBuffer.isEmpty()) {
             Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
             Type type = new TypeToken<Map<String, Map<String, Integer>>>() {
             }.getType();
             Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
 
             if (loaded != null && !loaded.isEmpty()) {
-                cache.putAll(loaded);
+                // Load into globalBuffer
+                globalBuffer.putAll(loaded);
+
+                // Refresh activeCache based on current position and scan range
+                if (mc.player != null) {
+                    AutoStash autoStash = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(AutoStash.class);
+                    if (autoStash != null) {
+                        autoStash.checkAndRefreshCache();
+                    }
+                }
+
                 AutoStash.cacheDirty = true;
                 sendMessage("§aLoaded cache from file (" + loaded.size() + " chests).");
             } else {
@@ -456,7 +468,7 @@ public class StorageManager extends Module {
             return;
 
         String chestJsonKey = CacheUtils.posToString(currentTarget);
-        Map<String, Map<String, Integer>> globalCache = AutoStash.getChestCache();
+        Map<String, Map<String, Integer>> globalCache = AutoStash.getGlobalBuffer();
         if (globalCache.containsKey(chestJsonKey)) {
             Map<String, Integer> chestContents = globalCache.get(chestJsonKey);
 
@@ -469,7 +481,9 @@ public class StorageManager extends Module {
                 } else {
                     chestContents.put(itemId, newAmount);
                 }
-                AutoStash.cacheDirty = true;
+
+                // Use the new updateGlobalAndSync to sync both layers and file
+                AutoStash.updateGlobalAndSync(currentTarget, chestContents);
             }
         }
     }

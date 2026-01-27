@@ -47,13 +47,25 @@ public class AutoStash extends Module {
     private final NumberSetting spaceWeight = new NumberSetting("Space Weight", 0.4, 0.0, 1.0, 0.1);
 
     // --- Cache Data Structures ---
-    private static Map<String, Map<String, Integer>> chestCache = new HashMap<>();
+    // Global Buffer: Contains ALL chest data loaded from file
+    private static Map<String, Map<String, Integer>> globalBuffer = new HashMap<>();
+
+    // Active Cache: Contains only chests within scan range (used by UI and operations)
+    private static Map<String, Map<String, Integer>> activeCache = new HashMap<>();
 
     // Cờ đánh dấu cache đã thay đổi
     public static boolean cacheDirty = false;
 
+    // Position tracking for event-driven cache refresh
+    private BlockPos lastUpdatePos = null;
+    private double lastRange = -1;
+
     public static Map<String, Map<String, Integer>> getChestCache() {
-        return chestCache;
+        return activeCache; // Return active cache for UI/operations
+    }
+
+    public static Map<String, Map<String, Integer>> getGlobalBuffer() {
+        return globalBuffer;
     }
 
     public double getRange() {
@@ -164,7 +176,8 @@ public class AutoStash extends Module {
 
     // ... (Giữ nguyên logic Rebuild Cache) ...
     private void startRebuildCache() {
-        chestCache.clear();
+        globalBuffer.clear();
+        activeCache.clear();
         cacheDirty = true;
         scanQueue.clear();
         BlockPos playerPos = mc.player.blockPosition();
@@ -188,8 +201,16 @@ public class AutoStash extends Module {
     private void processScanQueue() {
         if (scanQueue.isEmpty()) {
             Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
-            CacheUtils.saveToJson(cacheFile, chestCache);
+            CacheUtils.saveToJson(cacheFile, globalBuffer);
             rebuildCache.setValue(false);
+
+            // After rebuild, refresh active cache based on current position
+            if (mc.player != null) {
+                StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+                double range = sm != null ? sm.scanRange.getValue() : 16.0;
+                refreshActiveCache(mc.player.blockPosition(), range);
+            }
+
             sendMessage("Cache rebuild complete. Saved to disk.");
             this.setEnabled(false);
             return;
@@ -209,16 +230,24 @@ public class AutoStash extends Module {
         Type type = new TypeToken<Map<String, Map<String, Integer>>>(){}.getType();
         Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
 
-        if (loaded != null && chestCache.isEmpty()) {
-            chestCache.putAll(loaded);
+        if (loaded != null && globalBuffer.isEmpty()) {
+            globalBuffer.putAll(loaded);
             cacheDirty = true;
         }
 
-        if (chestCache.isEmpty()) {
+        if (globalBuffer.isEmpty()) {
             sendMessage("§cCache is empty. Please run Rebuild Cache first.");
             this.setEnabled(false);
             return;
         }
+
+        // Refresh active cache before calculating stash plan
+        if (mc.player != null) {
+            StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+            double range = sm != null ? sm.scanRange.getValue() : 16.0;
+            refreshActiveCache(mc.player.blockPosition(), range);
+        }
+
         calculateStashPlan();
         if (stashQueue.isEmpty()) {
             sendMessage("Nothing to stash.");
@@ -250,7 +279,8 @@ public class AutoStash extends Module {
         BlockPos playerPos = mc.player.blockPosition();
         double rangeSq = Math.pow(range.getValue(), 2);
 
-        for (Map.Entry<String, Map<String, Integer>> entry : chestCache.entrySet()) {
+        // Use activeCache instead of globalBuffer for performance
+        for (Map.Entry<String, Map<String, Integer>> entry : activeCache.entrySet()) {
             String posStr = entry.getKey();
             Map<String, Integer> contents = entry.getValue();
             BlockPos pos = CacheUtils.stringToPos(posStr);
@@ -470,7 +500,18 @@ public class AutoStash extends Module {
                 }
             }
             String posKey = CacheUtils.posToString(currentTarget);
-            chestCache.put(posKey, contents);
+
+            // Update both globalBuffer and activeCache
+            globalBuffer.put(posKey, contents);
+
+            // Only add to activeCache if within range
+            if (mc.player != null) {
+                StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+                double scanRange = sm != null ? sm.scanRange.getValue() : 16.0;
+                if (currentTarget.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
+                    activeCache.put(posKey, contents);
+                }
+            }
 
             // Bật cờ dirty để GUI cập nhật
             cacheDirty = true;
@@ -535,6 +576,71 @@ public class AutoStash extends Module {
     }
 
     // ========== MANUAL CONTAINER TRACKING ==========
+
+    /**
+     * Event-driven cache refresh logic
+     * Called from ModuleManager on tick to check if activeCache needs updating
+     */
+    public void checkAndRefreshCache() {
+        if (mc.player == null) return;
+
+        BlockPos currentPos = mc.player.blockPosition();
+        StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+        double currentRange = sm != null ? sm.scanRange.getValue() : 16.0;
+
+        // Condition 1: Player moved more than 2 blocks
+        // Condition 2: Scan range setting changed
+        // Condition 3: First time initialization
+        if (lastUpdatePos == null ||
+            currentPos.distSqr(lastUpdatePos) > 4 ||
+            currentRange != lastRange) {
+
+            refreshActiveCache(currentPos, currentRange);
+
+            lastUpdatePos = currentPos;
+            lastRange = currentRange;
+        }
+    }
+
+    /**
+     * Refresh active cache by filtering globalBuffer based on position and range
+     */
+    private void refreshActiveCache(BlockPos center, double range) {
+        double rangeSq = range * range;
+        Map<String, Map<String, Integer>> newActive = new HashMap<>();
+
+        globalBuffer.forEach((posStr, contents) -> {
+            BlockPos chestPos = CacheUtils.stringToPos(posStr);
+            if (chestPos.distSqr(center) <= rangeSq) {
+                newActive.put(posStr, contents);
+            }
+        });
+
+        activeCache = newActive;
+        cacheDirty = true; // Notify UI to update
+    }
+
+    /**
+     * Update global buffer and sync to file, then force refresh activeCache
+     * This method should be called after successful stash/withdraw operations
+     */
+    public static void updateGlobalAndSync(BlockPos pos, Map<String, Integer> newData) {
+        String key = CacheUtils.posToString(pos);
+        globalBuffer.put(key, newData);
+
+        // Sync to file immediately (ConfigManager handles debounce if needed)
+        Minecraft mc = Minecraft.getInstance();
+        Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
+        CacheUtils.saveToJson(cacheFile, globalBuffer);
+
+        // Force refresh active cache on next tick
+        // (By clearing lastUpdatePos of current AutoStash instance)
+        AutoStash instance = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(AutoStash.class);
+        if (instance != null) {
+            instance.lastUpdatePos = null;
+            AutoStash.cacheDirty = true;
+        }
+    }
 
     /**
      * Được gọi từ Mixin khi người chơi click vào một block
@@ -634,7 +740,17 @@ public class AutoStash extends Module {
             }
 
             String posKey = CacheUtils.posToString(pos);
-            chestCache.put(posKey, contents);
+
+            // Update both globalBuffer and activeCache
+            globalBuffer.put(posKey, contents);
+
+            // Only add to activeCache if within range
+            StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+            double scanRange = sm != null ? sm.scanRange.getValue() : 16.0;
+            if (minecraft.player != null && pos.distSqr(minecraft.player.blockPosition()) <= scanRange * scanRange) {
+                activeCache.put(posKey, contents);
+            }
+
             cacheDirty = true;
 
             // Lưu vào file

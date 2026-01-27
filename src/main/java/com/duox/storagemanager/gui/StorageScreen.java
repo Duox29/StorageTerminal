@@ -125,6 +125,9 @@ public class StorageScreen extends Screen {
         super(Component.literal("Storage Terminal"));
         this.storageManager = manager;
 
+        // Load cache from file if not already loaded (critical for module-enabled-by-default case)
+        this.storageManager.ensureCacheLoaded();
+
         // Apply scale and grid settings
         applyScaleSettings();
 

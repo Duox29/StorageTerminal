@@ -92,6 +92,12 @@ public class ModuleManager {
             // Xử lý manual cache update cho AutoStash (luôn chạy ngầm)
             AutoStash.tickManualCacheUpdate();
 
+            // Update Active Cache based on player movement and range changes
+            AutoStash autoStash = getModule(AutoStash.class);
+            if (autoStash != null) {
+                autoStash.checkAndRefreshCache();
+            }
+
             List<Module> toggledModules = new ArrayList<>();
             for (Module module : moduleMap.values()) {
                 if (module.isHold()) {
