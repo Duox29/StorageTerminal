@@ -163,17 +163,16 @@ public class StorageScreen extends Screen {
 
         // Search Box
         // UPDATE: Đặt Search Box nằm gọn giữa Title và Grid
-        int searchW = 150;
-        int searchY = guiTop + 25; // Vị trí Y mới (dưới title)
+        int padding = 20;
+        int searchW = GUI_WIDTH - (padding * 2);
+        int searchY = guiTop + 25;
 
-        this.searchBox = new EditBox(this.font, guiLeft + GUI_WIDTH - searchW - 10, searchY, searchW, 12,
-                Component.literal("Search"));
+        this.searchBox = new EditBox(this.font, guiLeft + padding, searchY, searchW, 12, Component.literal("Search"));
         this.searchBox.setMaxLength(50);
         this.searchBox.setBordered(false);
         this.searchBox.setTextColor(0xFFFFFFFF);
         this.searchBox.setResponder(this::onSearchChanged);
         this.addWidget(this.searchBox);
-
         // Request Button
         // UPDATE: Đặt nút xuống đáy GUI
         int btnY = guiTop + GUI_HEIGHT - 28;
@@ -247,7 +246,7 @@ public class StorageScreen extends Screen {
         int searchY = searchBox.getY() - 2;
         graphics.fill(searchX, searchY, searchX + searchBox.getWidth() + 8, searchY + 16, 0xFF000000);
         graphics.renderOutline(searchX, searchY, searchBox.getWidth() + 8, 16, COLOR_BG_BORDER);
-
+        this.searchBox.render(graphics, mouseX, mouseY, partialTick);
         // 4. Scrollbar
         renderScrollbar(graphics, mouseX, mouseY);
 
@@ -256,6 +255,7 @@ public class StorageScreen extends Screen {
         graphics.drawString(this.font, this.title, guiLeft + 8, guiTop + 10, COLOR_TEXT_TITLE, false);
 
         // 6. Items
+        float itemScale = storageManager.screenScale.getValue().floatValue();
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         int startIndex = (int) (scrollPosition * Math.max(0, totalRows - GRID_ROWS)) * GRID_COLS;
         int endIndex = Math.min(startIndex + (GRID_ROWS * GRID_COLS), filteredItems.size());
@@ -269,14 +269,17 @@ public class StorageScreen extends Screen {
             int x = guiLeft + GRID_X_OFFSET + col * SLOT_SIZE;
             int y = guiTop + GRID_Y_OFFSET + row * SLOT_SIZE;
 
+            // Hover logic (remains using 'x' and 'y' because mouse coords are absolute)
             boolean isHovered = mouseX >= x && mouseX < x + SLOT_SIZE && mouseY >= y && mouseY < y + SLOT_SIZE;
             if (isHovered) {
                 graphics.fill(x, y, x + SLOT_SIZE - 1, y + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
             }
-
-            graphics.renderItem(entry.stack, x + 1, y + 1);
-            graphics.renderItemDecorations(this.font, entry.stack, x + 1, y + 1, shortenedCount(entry.totalCount));
-
+            graphics.pose().pushPose();
+            graphics.pose().translate(x + 1, y + 1, 0);
+            graphics.pose().scale(itemScale, itemScale, 1.0f);
+            graphics.renderItem(entry.stack, 0, 0);
+            graphics.renderItemDecorations(this.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
+            graphics.pose().popPose();
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
                 graphics.renderOutline(x, y, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);

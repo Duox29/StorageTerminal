@@ -132,9 +132,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     private void initComponents() {
-        int searchW = 120;
-        this.searchBox = new EditBox(mc.font, x + PANEL_WIDTH - searchW - 10, y + 25, searchW, 12,
-                Component.literal("Search"));
+        int padding = 10;
+        int searchW = PANEL_WIDTH - (padding * 2);
+        this.searchBox = new EditBox(mc.font, x + padding, y + 25, searchW, 12, Component.literal("Search"));
         this.searchBox.setMaxLength(50);
         this.searchBox.setBordered(false);
         this.searchBox.setTextColor(0xFFFFFFFF);
@@ -167,8 +167,10 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     private void repositionComponents() {
-        int searchW = 120;
-        searchBox.setX(x + PANEL_WIDTH - searchW - 10);
+        int padding = 10;
+        int searchW = PANEL_WIDTH - (padding * 2);
+        searchBox.setWidth(searchW); // Ensure width is updated if panel resizes (optional)
+        searchBox.setX(x + padding);
         searchBox.setY(y + 25);
 
         int btnY = y + PANEL_HEIGHT - 25;
@@ -235,6 +237,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     private void renderItems(GuiGraphics graphics, int mouseX, int mouseY) {
+        float itemScale = storageManager.panelScale.getValue().floatValue();
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         int startIndex = (int) (scrollPosition * Math.max(0, totalRows - GRID_ROWS)) * GRID_COLS;
         int endIndex = Math.min(startIndex + (GRID_ROWS * GRID_COLS), filteredItems.size());
@@ -252,10 +255,16 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             if (isHovered) {
                 graphics.fill(sx, sy, sx + SLOT_SIZE - 1, sy + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
             }
+            graphics.pose().pushPose();
+            // Translate to slot + padding
+            graphics.pose().translate(sx + 1, sy + 1, 0);
+            // Scale
+            graphics.pose().scale(itemScale, itemScale, 1.0f);
 
-            graphics.renderItem(entry.stack, sx + 1, sy + 1);
-            graphics.renderItemDecorations(mc.font, entry.stack, sx + 1, sy + 1, shortenedCount(entry.totalCount));
+            graphics.renderItem(entry.stack, 0, 0);
+            graphics.renderItemDecorations(mc.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
 
+            graphics.pose().popPose();
             // Queue overlay
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
