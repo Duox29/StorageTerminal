@@ -46,6 +46,11 @@ public class StorageManager extends Module {
         CLOSING_CHEST
     }
 
+    private static final int CHEST_OPEN_TIMEOUT = 11;
+    private static final int PARTIAL_MOVE_DELAY = 0;
+    private static final int FULL_MOVE_DELAY = 0;
+    private static final int PLAYER_INVENTORY_SIZE = 36;
+
     private State currentState = State.IDLE;
     private BlockPos currentTarget = null;
     private BlockPos returnToContainerPos = null;
@@ -217,51 +222,12 @@ public class StorageManager extends Module {
 
         // CUSTOM SORT: Prioritize chests with LESS items (cleaning up junk) then
         // Distance
-        sortedChests.sort((s1, s2) -> {
-            Map<String, Integer> c1Contents = cache.get(s1);
-            Map<String, Integer> c2Contents = cache.get(s2);
-
-            // Calculate "Relevance Score" -> The quantity of the needed item in the chest.
-            // We want the chest where the needed item count is SMALLEST (but > 0).
-            int score1 = getMinRelevantQuantity(c1Contents, remainingNeeds);
-            int score2 = getMinRelevantQuantity(c2Contents, remainingNeeds);
-
-            // If one chest doesn't have what we need, push it to end (MAX_VALUE)
-            if (score1 != score2) {
-                return Integer.compare(score1, score2);
-            }
-
-            // Tie-break with distance
-            BlockPos p1 = CacheUtils.stringToPos(s1);
-            BlockPos p2 = CacheUtils.stringToPos(s2);
-            return Double.compare(p1.distSqr(playerPos), p2.distSqr(playerPos));
-        });
+        sortedChests.sort(new ChestComparator(cache, remainingNeeds, playerPos));
 
         for (String chestPosStr : sortedChests) {
             Map<String, Integer> contents = cache.get(chestPosStr);
             BlockPos chestPos = CacheUtils.stringToPos(chestPosStr);
-
-            for (Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator(); it.hasNext();) {
-                Map.Entry<String, Integer> req = it.next();
-                String itemId = req.getKey();
-                int needed = req.getValue();
-
-                if (contents.containsKey(itemId)) {
-                    int available = contents.get(itemId);
-                    int toTake = Math.min(needed, available);
-
-                    if (toTake > 0) {
-                        retrievalPlan.computeIfAbsent(chestPos, k -> new HashMap<>()).put(itemId, toTake);
-
-                        int newNeeded = needed - toTake;
-                        if (newNeeded <= 0) {
-                            it.remove(); // Fulfilled
-                        } else {
-                            req.setValue(newNeeded);
-                        }
-                    }
-                }
-            }
+            processChestContents(contents, chestPos, remainingNeeds);
         }
 
         if (!remainingNeeds.isEmpty()) {
@@ -269,19 +235,45 @@ public class StorageManager extends Module {
         }
 
         if (retrievalPlan.isEmpty()) {
-            sendMessage("Could not find any items to retrieve.");
-            // Kiểm tra xem user có add thêm gì mới vào queue trong lúc tính toán không
-            if (requestQueue.isEmpty()) {
-                currentState = State.IDLE;
-                this.setEnabled(false);
-            } else {
-                // Nếu có queue mới, tính toán lại ngay
-                calculateRetrievalPlan();
+            handleEmptyPlan();
+        } else {
+            retrievalIterator = retrievalPlan.entrySet().iterator();
+            moveToNextTarget();
+        }
+    }
+
+    private void processChestContents(Map<String, Integer> contents, BlockPos chestPos, Map<String, Integer> remainingNeeds) {
+        Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator();
+        while (it.hasNext()) {
+            Map.Entry<String, Integer> req = it.next();
+            String itemId = req.getKey();
+            int needed = req.getValue();
+
+            if (contents.containsKey(itemId)) {
+                int available = contents.get(itemId);
+                int toTake = Math.min(needed, available);
+
+                if (toTake > 0) {
+                    retrievalPlan.computeIfAbsent(chestPos, k -> new HashMap<>()).put(itemId, toTake);
+                    int newNeeded = needed - toTake;
+                    if (newNeeded <= 0) {
+                        it.remove();
+                    } else {
+                        req.setValue(newNeeded);
+                    }
+                }
             }
         }
+    }
 
-        retrievalIterator = retrievalPlan.entrySet().iterator();
-        moveToNextTarget();
+    private void handleEmptyPlan() {
+        sendMessage("Could not find any items to retrieve.");
+        if (requestQueue.isEmpty()) {
+            currentState = State.IDLE;
+            this.setEnabled(false);
+        } else {
+            calculateRetrievalPlan();
+        }
     }
 
     private int getMinRelevantQuantity(Map<String, Integer> chestContents, Map<String, Integer> needs) {
@@ -335,7 +327,7 @@ public class StorageManager extends Module {
         mc.player.swing(InteractionHand.MAIN_HAND);
 
         currentState = State.WAITING_FOR_OPEN;
-        waitTimer = 11;
+        waitTimer = CHEST_OPEN_TIMEOUT;
     }
 
     private void waitForContainer() {
@@ -361,14 +353,13 @@ public class StorageManager extends Module {
 
     private void performWithdrawal() {
         // Add artificial delay to prevent packet spam and desync
-        // This ensures the server acknowledges each transaction before we send the next
         if (waitTimer > 0) {
             waitTimer--;
             return;
         }
 
         AbstractContainerMenu menu = mc.player.containerMenu;
-        int containerSlots = menu.slots.size() - 36; // inventory always last 36 slots
+        int containerSlots = menu.slots.size() - PLAYER_INVENTORY_SIZE; // inventory always last 36 slots
 
         if (containerSlots <= 0) {
             currentState = State.CLOSING_CHEST;
@@ -378,76 +369,70 @@ public class StorageManager extends Module {
         Map<String, Integer> itemsToTake = currentTargetEntry.getValue();
         boolean actionTaken = false;
 
-        // Iterate through chest slots
         for (int i = 0; i < containerSlots; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
-            if (stack.isEmpty())
-                continue;
+            if (stack.isEmpty()) continue;
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            if (!itemsToTake.containsKey(itemId)) continue;
 
-            if (itemsToTake.containsKey(itemId)) {
-                int needed = itemsToTake.get(itemId);
-                if (needed <= 0)
-                    continue;
+            int needed = itemsToTake.get(itemId);
+            if (needed <= 0) continue;
 
-                int inSlot = stack.getCount();
-                int actualTaken = 0;
-                boolean isPartial = false;
-
-                if (inSlot <= needed) {
-                    // VERIFY SPACE: Check if player inventory has space
-                    int space = InventoryUtils.calculatePlayerSpace(menu, stack);
-                    int toMove = Math.min(inSlot, space);
-
-                    if (toMove <= 0) {
-                        // Inventory full, cannot move anything
-                        continue;
-                    }
-
-                    // Take stack using Quick Move (Shift + Click)
-                    InventoryUtils.quickMove(menu, i);
-                    actualTaken = toMove;
-                } else {
-                    // Take PARTIAL stack
-                    int targetSlot = InventoryUtils.findEmptyPlayerSlot(menu, containerSlots);
-                    if (targetSlot != -1) {
-                        isPartial = true;
-                        // 1. Pickup source (Left Click) -> Hold stack
-                        InventoryUtils.pickup(menu, i);
-
-                        // 2. Drop 'needed' items into player slot (Right Click = Place 1)
-                        for (int k = 0; k < needed; k++) {
-                            InventoryUtils.dropOne(menu, targetSlot);
-                        }
-
-                        // 3. Return remainder to source (Left Click) -> Place back
-                        InventoryUtils.pickup(menu, i);
-
-                        actualTaken = needed;
-                    } else {
-                        // Inventory full, unable to take partial stack, try next item or abort
-                        continue;
-                    }
-                }
-
-                updateCache(itemId, actualTaken);
-                itemsToTake.put(itemId, needed - actualTaken);
-
-                // CRITICAL FIX: Only process ONE stack/action per tick cycle.
-                // Breaking the loop allows the server time to process the inventory changes.
-                // Partial takes are complex and need more time (4 ticks), Quick Moves are
-                // faster (2 ticks).
+            if (tryWithdrawItem(menu, i, stack, itemId, needed, containerSlots)) {
                 actionTaken = true;
-                waitTimer = isPartial ? 0 : 0;
                 break;
             }
         }
 
-        // Only close if we scanned the whole chest and found nothing more to take
         if (!actionTaken) {
             currentState = State.CLOSING_CHEST;
         }
+    }
+
+    private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId, int needed, int containerSlots) {
+        int inSlot = stack.getCount();
+        int actualTaken = 0;
+        boolean isPartial = false;
+
+        if (inSlot <= needed) {
+            actualTaken = transferFullStack(menu, slotIndex, stack);
+        } else {
+            actualTaken = transferPartialStack(menu, slotIndex, needed, containerSlots);
+            if (actualTaken > 0) isPartial = true;
+        }
+
+        if (actualTaken > 0) {
+            updateCache(itemId, actualTaken);
+            currentTargetEntry.getValue().put(itemId, needed - actualTaken);
+            waitTimer = isPartial ? PARTIAL_MOVE_DELAY : FULL_MOVE_DELAY;
+            return true;
+        }
+        return false;
+    }
+
+    private int transferFullStack(AbstractContainerMenu menu, int slotIndex, ItemStack stack) {
+        int space = InventoryUtils.calculatePlayerSpace(menu, stack);
+        int toMove = Math.min(stack.getCount(), space);
+
+        if (toMove > 0) {
+            InventoryUtils.quickMove(menu, slotIndex);
+            return toMove;
+        }
+        return 0;
+    }
+
+    private int transferPartialStack(AbstractContainerMenu menu, int slotIndex, int needed, int containerSlots) {
+        int targetSlot = InventoryUtils.findEmptyPlayerSlot(menu, containerSlots);
+        if (targetSlot != -1) {
+            InventoryUtils.pickup(menu, slotIndex);
+            for (int k = 0; k < needed; k++) {
+                InventoryUtils.dropOne(menu, targetSlot);
+            }
+            InventoryUtils.pickup(menu, slotIndex);
+            return needed;
+        }
+        return 0;
     }
 
     private void updateCache(String itemId, int amountTaken) {
@@ -495,6 +480,39 @@ public class StorageManager extends Module {
     private void sendMessage(String message) {
         if (mc.player != null) {
             mc.player.displayClientMessage(Component.literal("§6[StorageManager] §r" + message), false);
+        }
+    }
+
+    private class ChestComparator implements Comparator<String> {
+        private final Map<String, Map<String, Integer>> cache;
+        private final Map<String, Integer> remainingNeeds;
+        private final BlockPos playerPos;
+
+        public ChestComparator(Map<String, Map<String, Integer>> cache, Map<String, Integer> remainingNeeds, BlockPos playerPos) {
+            this.cache = cache;
+            this.remainingNeeds = remainingNeeds;
+            this.playerPos = playerPos;
+        }
+
+        @Override
+        public int compare(String s1, String s2) {
+            Map<String, Integer> c1Contents = cache.get(s1);
+            Map<String, Integer> c2Contents = cache.get(s2);
+
+            // Calculate "Relevance Score" -> The quantity of the needed item in the chest.
+            // We want the chest where the needed item count is SMALLEST (but > 0).
+            int score1 = getMinRelevantQuantity(c1Contents, remainingNeeds);
+            int score2 = getMinRelevantQuantity(c2Contents, remainingNeeds);
+
+            // If one chest doesn't have what we need, push it to end (MAX_VALUE)
+            if (score1 != score2) {
+                return Integer.compare(score1, score2);
+            }
+
+            // Tie-break with distance
+            BlockPos p1 = CacheUtils.stringToPos(s1);
+            BlockPos p2 = CacheUtils.stringToPos(s2);
+            return Double.compare(p1.distSqr(playerPos), p2.distSqr(playerPos));
         }
     }
 }
