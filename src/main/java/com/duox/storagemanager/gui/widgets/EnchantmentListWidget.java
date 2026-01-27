@@ -10,6 +10,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
@@ -177,7 +178,12 @@ public class EnchantmentListWidget extends SettingWidget {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+        // FIX: Extract data from the event record
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         int startX = x + 2;
         int startY = y + INPUT_AREA_HEIGHT;
         int currentX = startX;

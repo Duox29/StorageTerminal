@@ -13,12 +13,15 @@ import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.minecraft.client.input.MouseButtonEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -91,7 +94,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             this.totalCount = count;
             Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id))
                     .map(net.minecraft.core.Holder::value) // Extract Item from Holder
-                    .orElse(net.minecraft.world.item.Items.AIR);            this.stack = new ItemStack(item);
+                    .orElse(net.minecraft.world.item.Items.AIR);
+            this.stack = new ItemStack(item);
         }
     }
 
@@ -304,9 +308,16 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     // --- INPUT HANDLING ---
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+        // 1. Extract the raw values from the event object
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         if (!isMouseOver(mouseX, mouseY))
             return false;
+
+        // --- Original Logic Starts Here ---
 
         // PRIORITY 1: Check if clicking on scrollbar
         int scrollX = x + PANEL_WIDTH - 8;
@@ -314,7 +325,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         int scrollH = GRID_ROWS * SLOT_SIZE;
 
         if (button == 0 && mouseX >= scrollX && mouseX <= scrollX + 6 &&
-            mouseY >= scrollY && mouseY <= scrollY + scrollH) {
+                mouseY >= scrollY && mouseY <= scrollY + scrollH) {
             int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
             if (totalRows > GRID_ROWS) {
                 isDraggingScrollbar = true;
@@ -326,12 +337,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         }
 
         // PRIORITY 2: Check if clicking on header for dragging
-        // Only drag from the left portion of header to avoid conflicts with searchBox
-        int headerDragWidth = PANEL_WIDTH - 130; // Leave space for searchBox on the right
+        int headerDragWidth = PANEL_WIDTH - 130;
         if (button == 0 && mouseX >= x && mouseX <= x + headerDragWidth &&
-            mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
+                mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
             isDragging = true;
-            widgetFocused = true; // IMPORTANT: Set focused so mouseDragged gets called
+            widgetFocused = true;
             dragOffsetX = (int) (mouseX - x);
             dragOffsetY = (int) (mouseY - y);
             System.out.println("[StoragePanel] Started dragging at offset: " + dragOffsetX + ", " + dragOffsetY);
@@ -339,15 +349,18 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         }
 
         // PRIORITY 3: Components
-        if (searchBox.mouseClicked(mouseX, mouseY, button)) {
+        // Note: You may need to update these components too if they expect the Event object now!
+        // For standard vanilla components (EditBox, Button), they likely handle the new system internally
+        // or you might need to pass the 'event' directly if their signature changed too.
+        if (searchBox.mouseClicked(event, false)) {
             setFocusedListener(searchBox);
             return true;
         }
-        if (requestButton.mouseClicked(mouseX, mouseY, button))
+        if (requestButton.mouseClicked(event, false))
             return true;
-        if (autoStashButton.mouseClicked(mouseX, mouseY, button))
+        if (autoStashButton.mouseClicked(event, false))
             return true;
-        if (recipeButton.mouseClicked(mouseX, mouseY, button))
+        if (recipeButton.mouseClicked(event, false))
             return true;
 
         // PRIORITY 4: Grid
@@ -355,9 +368,14 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
         return true;
     }
-
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(MouseButtonEvent event) {
+        // Extract data from the record
+        int button = event.button();
+        double mouseX = event.x();
+        double mouseY = event.y();
+
+        // Logic from your original code
         if (isDraggingScrollbar && button == 0) {
             isDraggingScrollbar = false;
             widgetFocused = false;
@@ -374,14 +392,23 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        return searchBox.mouseReleased(mouseX, mouseY, button) ||
-                requestButton.mouseReleased(mouseX, mouseY, button) ||
-                autoStashButton.mouseReleased(mouseX, mouseY, button) ||
-                recipeButton.mouseReleased(mouseX, mouseY, button);
+        // Pass through to components
+        // NOTE: You will need to check if these components (EditBox/Button) also expect the event object.
+        // Standard Minecraft widgets usually handle the new system, but if they are custom wrappers,
+        // you might need to verify their signatures too.
+        return searchBox.mouseReleased(event) ||
+                requestButton.mouseReleased(event) ||
+                autoStashButton.mouseReleased(event) ||
+                recipeButton.mouseReleased(event);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        // Extract data from the record
+        int button = event.button();
+        double mouseX = event.x();
+        double mouseY = event.y();
+
         if (isDraggingScrollbar && button == 0) {
             // Calculate new scroll position based on drag
             int scrollY = y + GRID_Y_OFFSET;
@@ -392,6 +419,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 int thumbH = (int) ((float) (GRID_ROWS * GRID_ROWS) / totalRows * SLOT_SIZE);
                 thumbH = Math.max(20, Math.min(scrollH, thumbH));
 
+                // Note: scrollbarDragStartY was an int, but mouseY is double. explicit cast is fine.
                 int dragDelta = (int) (mouseY - scrollbarDragStartY);
                 int maxThumbTravel = scrollH - thumbH;
 
@@ -415,7 +443,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        return searchBox.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+        return searchBox.mouseDragged(event, dragX, dragY);
     }
 
     @Override
@@ -464,17 +492,20 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyEvent event) {
+        // Check if searchBox is focused
         if (searchBox.isFocused()) {
-            return searchBox.keyPressed(keyCode, scanCode, modifiers);
+            // The EditBox component also expects the 'KeyEvent' object now
+            return searchBox.keyPressed(event);
         }
         return false;
     }
 
     @Override
-    public boolean charTyped(char codePoint, int modifiers) {
+    public boolean charTyped(CharacterEvent event) {
         if (searchBox.isFocused()) {
-            return searchBox.charTyped(codePoint, modifiers);
+            // Delegate the event object directly to the EditBox
+            return searchBox.charTyped(event);
         }
         return false;
     }
@@ -529,7 +560,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (index >= 0 && index < filteredItems.size()) {
             ItemEntry entry = filteredItems.get(index);
             int change = (button == 0) ? 64 : 1;
-            if (Screen.hasShiftDown())
+
+            // FIX: Use the Minecraft instance (mc) to check input state
+            if (mc.hasShiftDown())
                 change = -change;
 
             int current = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
@@ -544,7 +577,6 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                     .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
         }
     }
-
     private void refreshItemList() {
         allItems.clear();
         Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();

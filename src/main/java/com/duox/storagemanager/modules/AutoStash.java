@@ -365,9 +365,11 @@ public class AutoStash extends Module {
     private int getMaxStackSize(String itemId) {
         try {
             net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.parse(itemId);
-            net.minecraft.world.item.Item item = BuiltInRegistries.ITEM.get(location);
-            if (item != null) {
-                return item.getDefaultMaxStackSize();
+
+            // FIX: Handle Optional<Holder<Item>> return type
+            var optionalItem = BuiltInRegistries.ITEM.get(location);
+            if (optionalItem.isPresent()) {
+                return optionalItem.get().value().getDefaultMaxStackSize();
             }
         } catch (Exception e) {
             // If error, default to 64
@@ -566,7 +568,17 @@ public class AutoStash extends Module {
         return false;
     }
     private void sendQuickMovePacket(AbstractContainerMenu menu, int slotId) {
-        mc.player.connection.send(new ServerboundContainerClickPacket(menu.containerId, menu.getStateId(), slotId, 0, ClickType.QUICK_MOVE, menu.getSlot(slotId).getItem().copy(), new it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap<>()));
+        // FIX: Use GameMode to handle the click.
+        // This automatically handles the packet creation, state IDs, and the new HashedStack logic.
+        if (mc.gameMode != null) {
+            mc.gameMode.handleInventoryMouseClick(
+                    menu.containerId,
+                    slotId,
+                    0,
+                    ClickType.QUICK_MOVE,
+                    mc.player
+            );
+        }
     }
     private void sendClosePacket() {
         if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {

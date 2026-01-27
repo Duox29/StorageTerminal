@@ -15,8 +15,8 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntityType;
-import net.minecraft.world.item.SpawnEggItem; // Sử dụng class gốc của Minecraft
-// import net.neoforged.neoforge.common.DeferredSpawnEggItem; // XÓA DÒNG NÀY
+import net.minecraft.world.item.SpawnEggItem;
+import net.minecraft.client.input.MouseButtonEvent; // IMPORT ADDED
 
 import java.util.ArrayList;
 import java.util.List;
@@ -139,8 +139,14 @@ public class EntityListWidget extends SettingWidget {
         }
     }
 
+    // FIX: Updated signature to match the new Event System and parent SettingWidget
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+        // Extract data from the event record
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         int startX = x + 2;
         int startY = y + INPUT_AREA_HEIGHT;
         int currentX = startX;

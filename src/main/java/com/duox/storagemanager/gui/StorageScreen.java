@@ -15,6 +15,9 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.CharacterEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -83,7 +86,9 @@ public class StorageScreen extends Screen {
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
-            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id));
+            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id))
+                    .map(net.minecraft.core.Holder::value) // Extract Item from Holder
+                    .orElse(net.minecraft.world.item.Items.AIR);
             this.stack = new ItemStack(item);
         }
     }
@@ -102,7 +107,7 @@ public class StorageScreen extends Screen {
         }
 
         @Override
-        public void renderWidget(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
             boolean hovered = isHoveredOrFocused();
             boolean active = isActiveSupplier.getAsBoolean();
 
@@ -321,12 +326,12 @@ public class StorageScreen extends Screen {
             if (isHovered) {
                 graphics.fill(x, y, x + SLOT_SIZE - 1, y + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
             }
-            graphics.pose().pushPose();
-            graphics.pose().translate(x + 1, y + 1, 0);
-            graphics.pose().scale(itemScale, itemScale, 1.0f);
+            graphics.pose().pushMatrix();
+            graphics.pose().translate(x + 1, y + 1);
+            graphics.pose().scale(itemScale, itemScale);
             graphics.renderItem(entry.stack, 0, 0);
             graphics.renderItemDecorations(this.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
-            graphics.pose().popPose();
+            graphics.pose().popMatrix();
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
                 graphics.renderOutline(x, y, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
@@ -339,8 +344,7 @@ public class StorageScreen extends Screen {
                     tooltip.add(Component.literal("§eRequesting: " + queued));
                 }
                 tooltip.add(Component.literal("§8[L-Click: +64 | R-Click: +1 | Shift: Remove]"));
-                graphics.renderTooltip(this.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
-            }
+                graphics.setTooltipForNextFrame(this.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);            }
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -421,7 +425,11 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+// 1. Trích xuất dữ liệu từ event record
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
         // Check if clicking on scrollbar first
         int scrollBarX = guiLeft + GUI_WIDTH - 16;
         int scrollBarY = guiTop + GRID_Y_OFFSET;
@@ -438,7 +446,7 @@ public class StorageScreen extends Screen {
             }
         }
 
-        if (super.mouseClicked(mouseX, mouseY, button))
+        if (super.mouseClicked(event, isFocused))
             return true;
 
         int startX = guiLeft + GRID_X_OFFSET;
@@ -467,16 +475,21 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(MouseButtonEvent event) {
+        int button = event.button();
+
         if (isDraggingScrollbar && button == 0) {
             isDraggingScrollbar = false;
             return true;
         }
-        return super.mouseReleased(mouseX, mouseY, button);
+        // FIX: Gọi super với event object
+        return super.mouseReleased(event);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        int button = event.button();
+        double mouseY = event.y();
         if (isDraggingScrollbar && button == 0) {
             int scrollBarY = guiTop + GRID_Y_OFFSET;
             int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
@@ -498,13 +511,11 @@ public class StorageScreen extends Screen {
             }
             return true;
         }
-        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
-    }
+        return super.mouseDragged(event, dragX, dragY);    }
 
     private void handleClick(ItemEntry entry, int button) {
         int change = 0;
-        boolean isShift = Screen.hasShiftDown();
-        if (button == 0)
+        boolean isShift = this.minecraft.hasShiftDown();        if (button == 0)
             change = 64; // Left
         if (button == 1)
             change = 1; // Right
@@ -578,12 +589,14 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
+    public boolean keyPressed(KeyEvent event) {
+        // FIX: Sử dụng event.key() thay vì keyCode
+        if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
             this.onClose();
             return true;
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        // FIX: Gọi super với event object
+        return super.keyPressed(event);
     }
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {

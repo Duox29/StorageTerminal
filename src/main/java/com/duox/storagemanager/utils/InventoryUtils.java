@@ -1,8 +1,6 @@
 package com.duox.storagemanager.utils;
 
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import net.minecraft.client.Minecraft;
-import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
@@ -12,30 +10,29 @@ public class InventoryUtils {
     private static final Minecraft mc = Minecraft.getInstance();
 
     /**
-     * Sends a click packet to the server.
+     * Sends a click packet to the server via the GameMode controller.
      */
     public static void sendClickPacket(AbstractContainerMenu menu, int slotId, int button, ClickType clickType) {
-        if (mc.player == null)
+        if (mc.player == null || mc.gameMode == null)
             return;
 
-        ItemStack stack = ItemStack.EMPTY;
-        if (slotId >= 0 && slotId < menu.slots.size()) {
-            stack = menu.getSlot(slotId).getItem().copy();
-        }
-
-        mc.player.connection.send(new ServerboundContainerClickPacket(
-                menu.containerId, menu.getStateId(), slotId, button, clickType,
-                stack,
-                new Int2ObjectOpenHashMap<>()));
+        // FIX: Use GameMode to handle inventory clicks.
+        // This automatically handles the 1.21.4 packet signature (HashedStack, swapped arguments) and state ID.
+        mc.gameMode.handleInventoryMouseClick(
+                menu.containerId,
+                slotId,
+                button,
+                clickType,
+                mc.player
+        );
     }
 
     /**
      * Finds the first empty slot in the player's inventory section of the
      * container.
-     * 
-     * @param menu              The container menu
+     * * @param menu              The container menu
      * @param containerSlotsEnd The index where the container slots end (and player
-     *                          inventory begins)
+     * inventory begins)
      * @return The slot index, or -1 if full
      */
     public static int findEmptyPlayerSlot(AbstractContainerMenu menu, int containerSlotsEnd) {
@@ -81,8 +78,7 @@ public class InventoryUtils {
     /**
      * Calculates the total space available in the player's inventory for the given
      * item stack.
-     * 
-     * @param menu       The container menu
+     * * @param menu       The container menu
      * @param stackToFit The item stack to check space for
      * @return The total count that can fit
      */

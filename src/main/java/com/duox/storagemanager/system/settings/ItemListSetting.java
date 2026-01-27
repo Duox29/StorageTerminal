@@ -54,9 +54,18 @@ public class ItemListSetting extends Setting<LinkedHashMap<Item, Boolean>> {
         JsonObject obj = element.getAsJsonObject();
 
         for (String key : obj.keySet()) {
+            // Safe parsing of the Resource Location
             Identifier rl = Identifier.tryParse(key);
-            if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
-                newMap.put(BuiltInRegistries.ITEM.get(rl), obj.get(key).getAsBoolean());
+
+            if (rl != null) {
+                // FIX: Get the Optional from the registry
+                var optionalItem = BuiltInRegistries.ITEM.get(rl);
+
+                // Check if the item exists in the registry
+                if (optionalItem.isPresent()) {
+                    // .get() retrieves the Holder, .value() retrieves the actual Item
+                    newMap.put(optionalItem.get().value(), obj.get(key).getAsBoolean());
+                }
             }
         }
         this.value = newMap;

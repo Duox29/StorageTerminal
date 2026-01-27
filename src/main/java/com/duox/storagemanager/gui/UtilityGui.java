@@ -8,6 +8,7 @@ import com.duox.storagemanager.system.settings.*;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
 import java.awt.Color;
@@ -155,18 +156,24 @@ public class UtilityGui extends Screen {
             guiGraphics.fill(btnX, btnY, btnX + MODULE_BTN_WIDTH, btnY + MODULE_BTN_HEIGHT, color);
             if (isSelected) guiGraphics.renderOutline(btnX - 1, btnY - 1, MODULE_BTN_WIDTH + 2, MODULE_BTN_HEIGHT + 2, 0xFF3498DB);
             guiGraphics.drawCenteredString(this.font, mod.getName(), btnX + MODULE_BTN_WIDTH / 2, btnY + 7, 0xFFFFFF);
-            if (isHovered) guiGraphics.renderTooltip(this.font, Component.literal(mod.getDescription()), mouseX, mouseY);
-            btnY += MODULE_BTN_HEIGHT + PADDING;
+            guiGraphics.setTooltipForNextFrame(this.font, Component.literal(mod.getDescription()), mouseX, mouseY);            btnY += MODULE_BTN_HEIGHT + PADDING;
         }
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+        // 1. Extract raw data for your internal logic
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         if (mouseX > SIDEBAR_WIDTH) {
             for (SettingWidget w : customRenderWidgets) {
-                if (w.mouseClicked(mouseX, mouseY, button)) return true;
-            }
-            if (super.mouseClicked(mouseX, mouseY, button)) return true;
+                // NOTE: If SettingWidget is a custom class you made, this might work.
+                // If it extends AbstractWidget, you might need to change this to: w.mouseClicked(event, isFocused);
+                if (w.mouseClicked(event, isFocused)) return true;            }
+            // FIX: Pass the event object to super
+            if (super.mouseClicked(event, isFocused)) return true;
         }
 
         if (mouseY < TOP_BAR_HEIGHT) {
@@ -193,7 +200,6 @@ public class UtilityGui extends Screen {
         }
         return false;
     }
-
     private boolean isInside(double mx, double my, int x, int y, int w, int h) { return mx >= x && mx <= x + w && my >= y && my <= y + h; }
     private int darken(int color) { Color c = new Color(color); return new Color((int)(c.getRed() * 0.7), (int)(c.getGreen() * 0.7), (int)(c.getBlue() * 0.7)).getRGB(); }
     private void drawTabButton(GuiGraphics g, int x, int y, int w, int h, String t, boolean s, int mx, int my) {

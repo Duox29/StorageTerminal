@@ -56,8 +56,15 @@ public class BlockListSetting extends Setting<LinkedHashMap<Block, Boolean>> {
 
         for (String key : obj.keySet()) {
             Identifier rl = Identifier.tryParse(key);
-            if (rl != null && BuiltInRegistries.BLOCK.containsKey(rl)) {
-                newMap.put(BuiltInRegistries.BLOCK.get(rl), obj.get(key).getAsBoolean());
+
+            // FIX: Remove 'containsKey' check and handle the Optional directly
+            if (rl != null) {
+                var optionalBlock = BuiltInRegistries.BLOCK.get(rl);
+                // Check if the block exists in the registry
+                if (optionalBlock.isPresent()) {
+                    // Extract the Block from the Holder and put it in the map
+                    newMap.put(optionalBlock.get().value(), obj.get(key).getAsBoolean());
+                }
             }
         }
         this.value = newMap;

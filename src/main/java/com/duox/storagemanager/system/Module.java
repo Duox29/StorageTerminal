@@ -4,6 +4,9 @@ import com.duox.storagemanager.system.settings.Setting;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
+import com.duox.storagemanager.StorageManager;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -30,18 +33,21 @@ public abstract class Module {
      */
     private boolean hold = false;
 
+    //private static final KeyMapping.Category KEY_BINDING_CATEGORY = KeyMapping.Category.register(Identifier.parse("storage_manager"));
+
     public Module(String name, String description, Category category) {
         this.name = name;
         this.description = description;
         this.category = category;
+
+        // FIX: Pass the KEY_BINDING_CATEGORY object instead of a String
         this.keyMapping = new KeyMapping(
                 name,
                 InputConstants.Type.KEYSYM,
                 InputConstants.UNKNOWN.getValue(),
-                "Storage Manager"
+                StorageManager.KEY_CATEGORY
         );
     }
-
     public Module(String name, String description, Category category, boolean hold) {
         this(name, description, category);
         this.hold = hold;

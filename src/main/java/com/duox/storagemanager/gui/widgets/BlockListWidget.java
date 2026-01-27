@@ -7,6 +7,7 @@ import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -59,11 +60,15 @@ public class BlockListWidget extends SettingWidget {
             String val = idInput.getValue();
             if (val != null && !val.isEmpty()) {
                 Identifier rl = Identifier.tryParse(val.contains(":") ? val : "minecraft:" + val);
-                if (rl != null && BuiltInRegistries.BLOCK.containsKey(rl)) {
-                    setting.add(BuiltInRegistries.BLOCK.get(rl));
-                    ConfigManager.getInstance().save();
-                    idInput.setValue("");
-                    if (onRefreshCallback != null) onRefreshCallback.run();
+                if (rl != null) {
+                    // FIX: Handle Optional return type from Registry
+                    var optionalBlock = BuiltInRegistries.BLOCK.get(rl);
+                    if (optionalBlock.isPresent()) {
+                        setting.add(optionalBlock.get().value()); // Extract Block from Holder
+                        ConfigManager.getInstance().save();
+                        idInput.setValue("");
+                        if (onRefreshCallback != null) onRefreshCallback.run();
+                    }
                 }
             }
         }).bounds(x + width - 40, y + 12, 40, 18).build();
@@ -99,8 +104,7 @@ public class BlockListWidget extends SettingWidget {
 
             if (mouseX >= currentX && mouseX <= currentX + 16 && mouseY >= currentY && mouseY <= currentY + 16) {
                 guiGraphics.renderOutline(currentX, currentY, 16, 16, 0xFFFFFFFF);
-                guiGraphics.renderTooltip(mc.font, Component.literal(block.getName().getString() + (enabled ? " [ON]" : " [OFF]")), mouseX, mouseY);
-            }
+                guiGraphics.setTooltipForNextFrame(mc.font, Component.literal(block.getName().getString() + (enabled ? " [ON]" : " [OFF]")), mouseX, mouseY);            }
 
             guiGraphics.renderItem(new ItemStack(block), currentX, currentY);
             currentX += ITEM_SIZE;
@@ -108,7 +112,12 @@ public class BlockListWidget extends SettingWidget {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+        // FIX: Extract data from event record
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         int btnAddX = x + width - 20;
         if (mouseX >= btnAddX && mouseX <= btnAddX + 20 && mouseY >= y && mouseY <= y + 10) {
             BlockSelector.INSTANCE.startSelecting(setting);
@@ -132,7 +141,7 @@ public class BlockListWidget extends SettingWidget {
                 if (button == 0) setting.toggle(block);
                 else if (button == 1) {
                     setting.remove(block);
-                    if (onRefreshCallback != null) onRefreshCallback.run(); // Refresh layout on remove
+                    if (onRefreshCallback != null) onRefreshCallback.run();
                 }
                 ConfigManager.getInstance().save();
                 return true;

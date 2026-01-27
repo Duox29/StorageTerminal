@@ -6,6 +6,7 @@ import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.client.input.MouseButtonEvent; // IMPORT ADDED
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -33,9 +34,11 @@ public abstract class MixinContainerScreen extends Screen {
         }
     }
 
+    // FIX: Updated signature to match Minecraft 1.21+ Screen.mouseDragged(MouseButtonEvent, double, double)
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
-    private void onMouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY, CallbackInfoReturnable<Boolean> cir) {
-        if (storagePanel != null && storagePanel.mouseDragged(mouseX, mouseY, button, dragX, dragY)) {
+    private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY, CallbackInfoReturnable<Boolean> cir) {
+        // Pass the event object directly to storagePanel
+        if (storagePanel != null && storagePanel.mouseDragged(event, dragX, dragY)) {
             cir.setReturnValue(true);
         }
     }

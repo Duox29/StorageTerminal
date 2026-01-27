@@ -15,6 +15,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.client.input.MouseButtonEvent; // FIX: Added Import
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,11 +62,16 @@ public class ItemListWidget extends SettingWidget {
             if (val != null && !val.isEmpty()) {
                 try {
                     Identifier rl = Identifier.tryParse(val.contains(":") ? val : "minecraft:" + val);
-                    if (rl != null && BuiltInRegistries.ITEM.containsKey(rl)) {
-                        setting.add(BuiltInRegistries.ITEM.get(rl));
-                        ConfigManager.getInstance().save();
-                        idInput.setValue("");
-                        if (onRefreshCallback != null) onRefreshCallback.run();
+
+                    // FIX: Handle Optional return from Registry
+                    if (rl != null) {
+                        var optionalItem = BuiltInRegistries.ITEM.get(rl);
+                        if (optionalItem.isPresent()) {
+                            setting.add(optionalItem.get().value()); // Extract Item
+                            ConfigManager.getInstance().save();
+                            idInput.setValue("");
+                            if (onRefreshCallback != null) onRefreshCallback.run();
+                        }
                     }
                 } catch (Exception ignored) {}
             }
@@ -96,19 +102,36 @@ public class ItemListWidget extends SettingWidget {
             int bgColor = enabled ? 0x8000FF00 : 0x80FF0000;
             guiGraphics.fill(currentX, currentY, currentX + 16, currentY + 16, bgColor);
 
+            // Create a stack for rendering and name retrieval
+            ItemStack stack = new ItemStack(item);
+
             if (mouseX >= currentX && mouseX <= currentX + 16 && mouseY >= currentY && mouseY <= currentY + 16) {
                 guiGraphics.renderOutline(currentX, currentY, 16, 16, 0xFFFFFFFF);
-                guiGraphics.renderTooltip(mc.font, Component.literal(item.getDescription().getString() + (enabled ? " [ON]" : " [OFF]")), mouseX, mouseY);
+
+                // FIX: Use item.getName(stack) to get the localized name
+                String name = item.getName(stack).getString();
+
+                guiGraphics.setTooltipForNextFrame(
+                        mc.font,
+                        Component.literal(name + (enabled ? " [ON]" : " [OFF]")),
+                        mouseX,
+                        mouseY
+                );
             }
 
-            guiGraphics.renderItem(new ItemStack(item), currentX, currentY);
+            guiGraphics.renderItem(stack, currentX, currentY);
 
             currentX += ITEM_SIZE;
         }
     }
-
+    // FIX: Updated signature to match parent class (SettingWidget) and new Input System
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
+        // Extract data
+        double mouseX = event.x();
+        double mouseY = event.y();
+        int button = event.button();
+
         int startX = x + 2;
         int startY = y + INPUT_AREA_HEIGHT;
         int currentX = startX;

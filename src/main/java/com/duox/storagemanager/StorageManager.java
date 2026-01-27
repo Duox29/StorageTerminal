@@ -5,6 +5,7 @@ import com.duox.storagemanager.system.*;
 import com.duox.storagemanager.system.Module;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier; // FIX: Added Import
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.common.NeoForge;
@@ -21,10 +22,13 @@ import org.lwjgl.glfw.GLFW;
 @Mod("storagemanager")
 public class StorageManager {
 
+    // FIX: Register the KeyBinding Category (Must use Identifier)
+    public static final KeyMapping.Category KEY_CATEGORY = KeyMapping.Category.register(Identifier.parse("storage_manager"));
+
     public static final KeyMapping OPEN_GUI_KEY = new KeyMapping(
             "Open GUI",
             GLFW.GLFW_KEY_RIGHT_SHIFT,
-            "Storage Manager"
+            KEY_CATEGORY // FIX: Pass the Category object, not a String
     );
 
     /**

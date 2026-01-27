@@ -1,13 +1,14 @@
 package com.duox.storagemanager.gui.widgets;
-/*
- * Widget for configuring keybinds.
- * Supports keyboard and mouse inputs.
- */
+
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics; // Required for renderContents
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.input.InputWithModifiers;
 import net.minecraft.network.chat.Component;
+import net.minecraft.client.input.KeyEvent; // New Input Event
+import net.minecraft.client.input.MouseButtonEvent; // New Input Event
 import org.lwjgl.glfw.GLFW;
 
 public class KeybindWidget extends Button {
@@ -15,16 +16,24 @@ public class KeybindWidget extends Button {
     private boolean listening = false;
 
     public KeybindWidget(int x, int y, int width, int height, KeyMapping keyMapping) {
-        // Pass a dummy action, we override onPress
         super(x, y, width, height, Component.empty(), b -> {}, DEFAULT_NARRATION);
         this.keyMapping = keyMapping;
         this.updateMessage();
     }
 
     @Override
-    public void onPress() {
+    public void onPress(InputWithModifiers input) {
         this.listening = !this.listening;
         this.updateMessage();
+    }
+
+    // --- FIX 1: Implement renderContents ---
+    // Since 'renderWidget' is final, we must provide the rendering logic here.
+    // We use the standard helper methods provided by AbstractButton to draw the background and label.
+    @Override
+    protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        this.renderDefaultSprite(graphics); // Draws the button texture
+        this.renderDefaultLabel(graphics.textRendererForWidget(this, GuiGraphics.HoveredTextEffects.NONE)); // Draws the text
     }
 
     private void updateMessage() {
@@ -37,13 +46,18 @@ public class KeybindWidget extends Button {
         }
     }
 
+    // --- FIX 2: Update keyPressed Signature & Logic ---
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyEvent event) {
         if (listening) {
+            int keyCode = event.key(); // Access key from record
+
             if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
                 listening = false;
             } else {
-                InputConstants.Key key = InputConstants.getKey(keyCode, scanCode);
+                // FIX 3: Use Type.KEYSYM.getOrCreate instead of InputConstants.getKey
+                InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(keyCode);
+
                 keyMapping.setKey(key);
                 Minecraft.getInstance().options.save();
                 KeyMapping.resetMapping();
@@ -52,12 +66,16 @@ public class KeybindWidget extends Button {
             updateMessage();
             return true;
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        // Pass event object to super
+        return super.keyPressed(event);
     }
 
+    // --- FIX 2: Update mouseClicked Signature & Logic ---
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
         if (listening) {
+            int button = event.button(); // Access button from record
+
             InputConstants.Key key = InputConstants.Type.MOUSE.getOrCreate(button);
             keyMapping.setKey(key);
             Minecraft.getInstance().options.save();
@@ -66,6 +84,7 @@ public class KeybindWidget extends Button {
             updateMessage();
             return true;
         }
-        return super.mouseClicked(mouseX, mouseY, button);
+        // Pass event object to super
+        return super.mouseClicked(event, isFocused);
     }
 }

@@ -85,7 +85,8 @@ public class SlotScrollHandler<T> {
         System.out.println("  -> Hovered item: " + itemId + " (max: " + maxCount + ")");
 
         int currentQueued = storageManager.getRequestQueue().getOrDefault(itemId, 0);
-        boolean shiftHeld = Screen.hasShiftDown();
+        // FIX: Use the Minecraft instance (mc) instead of the static Screen method
+        boolean shiftHeld = mc.hasShiftDown();
 
         System.out.println("  -> Current queued: " + currentQueued + ", Shift: " + shiftHeld);
 

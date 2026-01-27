@@ -58,8 +58,16 @@ public class EntityListSetting extends Setting<LinkedHashMap<EntityType<?>, Bool
         for (String key : obj.keySet()) {
             // Safe parsing to avoid crashes if config contains invalid IDs
             Identifier rl = Identifier.tryParse(key);
-            if (rl != null && BuiltInRegistries.ENTITY_TYPE.containsKey(rl)) {
-                newMap.put(BuiltInRegistries.ENTITY_TYPE.get(rl), obj.get(key).getAsBoolean());
+
+            if (rl != null) {
+                // FIX: Get the Optional from the registry
+                var optionalType = BuiltInRegistries.ENTITY_TYPE.get(rl);
+
+                // Check if it exists and extract the value
+                if (optionalType.isPresent()) {
+                    // .get() retrieves the Holder, .value() retrieves the EntityType
+                    newMap.put(optionalType.get().value(), obj.get(key).getAsBoolean());
+                }
             }
         }
         this.value = newMap;
