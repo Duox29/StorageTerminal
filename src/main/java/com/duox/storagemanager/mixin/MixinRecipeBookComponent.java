@@ -1,28 +1,25 @@
 package com.duox.storagemanager.mixin;
 
-import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
-import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.Ingredient;
-import net.minecraft.world.item.crafting.RecipeHolder;
-import net.minecraft.world.item.crafting.Recipe;
-import net.minecraft.world.item.crafting.PlacementInfo;
-import net.minecraft.world.item.crafting.display.RecipeDisplayId; // FIX: Added Import
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.crafting.display.SlotDisplay;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Redirect;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Mixin(RecipeBookComponent.class)
 public class MixinRecipeBookComponent {
@@ -30,103 +27,189 @@ public class MixinRecipeBookComponent {
     @Shadow
     protected Minecraft minecraft;
 
-    // FIX 1: Updated signature to use RecipeDisplayId matching Minecraft 1.21.4
-    @Redirect(method = "mouseClicked", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;handlePlaceRecipe(ILnet/minecraft/world/item/crafting/display/RecipeDisplayId;Z)V"))
-    private void redirectHandlePlaceRecipe(MultiPlayerGameMode instance, int containerId, RecipeDisplayId recipeId, boolean placeAll) {
-        // 1. Run original logic
-        instance.handlePlaceRecipe(containerId, recipeId, placeAll);
-
-        // 2. StorageManager Logic
+    /**
+     * Inject into tryPlaceRecipe to intercept recipe clicks.
+     * This method was identified existing in MC 1.21.11 via debugging.
+     */
+    @Inject(method = "tryPlaceRecipe", at = @At("HEAD"))
+    private void onTryPlaceRecipe(RecipeCollection collection,
+            RecipeDisplayId id,
+            boolean placeAll,
+            CallbackInfoReturnable<Boolean> cir) {
         try {
             StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
-            if (sm != null && sm.isEnabled() && sm.autoRequestRecipe.getValue()) {
-                // NOTE: RecipeDisplayId cannot be easily converted to RecipeHolder here without a lookup helper.
-                // For now, this call is disabled to prevent runtime crashes until a lookup is implemented.
-                // requestIngredients(recipeId, sm);
+            if (sm == null || !sm.isEnabled() || !sm.autoRequestRecipe.getValue()) {
+                return;
+            }
+
+            // Get ClientRecipeBook to resolve ID to Display
+            if (minecraft.player == null)
+                return;
+            var book = minecraft.player.getRecipeBook();
+
+            // Use accessor to get the known map
+            if (book instanceof ClientRecipeBookAccessor accessor) {
+                var known = accessor.getKnown();
+                var entry = known.get(id);
+                if (entry != null) {
+                    RecipeDisplay display = entry.display();
+                    requestIngredientsFromDisplay(display, sm);
+                }
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    /**
+     * Process recipe ingredients from RecipeDisplay and request missing items from
+     * storage
+     */
+    @SuppressWarnings("unchecked")
+    private void requestIngredientsFromDisplay(RecipeDisplay display, StorageManager sm) {
+        Map<String, Integer> needed = new HashMap<>();
+
+        try {
+            List<SlotDisplay> ingredientSlots = null;
+
+            // Robust reflection: find any field returning List that contains SlotDisplay
+            // This avoids issues with obfuscated field names or record component names
+            for (java.lang.reflect.Field field : display.getClass().getDeclaredFields()) {
+                field.setAccessible(true);
+                if (List.class.isAssignableFrom(field.getType())) {
+                    try {
+                        List<?> list = (List<?>) field.get(display);
+                        if (list != null && !list.isEmpty()
+                                && list.get(0) instanceof SlotDisplay) {
+                            ingredientSlots = (List<SlotDisplay>) list;
+                            break;
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+
+            // If field access failed (e.g. record), try accessor methods
+            if (ingredientSlots == null) {
+                for (java.lang.reflect.Method method : display.getClass().getDeclaredMethods()) {
+                    if (List.class.isAssignableFrom(method.getReturnType()) && method.getParameterCount() == 0) {
+                        try {
+                            List<?> list = (List<?>) method.invoke(display);
+                            if (list != null && !list.isEmpty()
+                                    && list.get(0) instanceof SlotDisplay) {
+                                ingredientSlots = (List<SlotDisplay>) list;
+                                break;
+                            }
+                        } catch (Exception ignored) {
+                        }
+                    }
+                }
+            }
+
+            if (ingredientSlots == null)
+                return;
+
+            for (SlotDisplay slotDisplay : ingredientSlots) {
+                // SlotDisplay needs to be converted to ItemStacks
+                List<ItemStack> possibleItems = resolveSlotDisplay(slotDisplay);
+
+                if (!possibleItems.isEmpty()) {
+                    // Priority: Item already in cache
+                    String bestItemId = null;
+                    for (ItemStack stack : possibleItems) {
+                        if (stack.isEmpty())
+                            continue;
+                        String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                        if (hasInCache(id)) {
+                            bestItemId = id;
+                            break;
+                        }
+                    }
+
+                    // If not in cache, use first variant
+                    if (bestItemId == null && !possibleItems.get(0).isEmpty()) {
+                        bestItemId = BuiltInRegistries.ITEM.getKey(possibleItems.get(0).getItem()).toString();
+                    }
+
+                    if (bestItemId != null) {
+                        needed.put(bestItemId, needed.getOrDefault(bestItemId, 0) + 1);
+                    }
+                }
+            }
+
+            // Check what's already in inventory
+            Inventory inventory = minecraft.player.getInventory();
+
+            for (int i = 0; i < inventory.getContainerSize(); i++) {
+                ItemStack stack = inventory.getItem(i);
+                if (stack.isEmpty())
+                    continue;
+
+                String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                if (needed.containsKey(id)) {
+                    int count = needed.get(id);
+                    int inInv = stack.getCount();
+                    if (inInv >= count) {
+                        needed.remove(id);
+                    } else {
+                        needed.put(id, count - inInv);
+                    }
+                }
+            }
+
+            // Add to Request Queue and start retrieval
+            if (!needed.isEmpty()) {
+                boolean added = false;
+                for (Map.Entry<String, Integer> entry : needed.entrySet()) {
+                    if (hasInCache(entry.getKey())) {
+                        sm.addToRequestQueue(entry.getKey(), entry.getValue());
+                        added = true;
+                    }
+                }
+                if (added) {
+                    sm.startRetrieval();
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
     }
 
-    // Updated to accept RecipeHolder if you implement the lookup,
-    // or you can try to adapt it to RecipeDisplayId if possible.
-    private void requestIngredients(RecipeHolder<?> recipeHolder, StorageManager sm) {
-        Map<String, Integer> needed = new HashMap<>();
+    /**
+     * Resolve a SlotDisplay to a list of possible ItemStacks
+     */
+    private List<ItemStack> resolveSlotDisplay(SlotDisplay slotDisplay) {
+        List<ItemStack> result = new java.util.ArrayList<>();
 
-        Recipe<?> recipe = recipeHolder.value();
-        PlacementInfo info = recipe.placementInfo();
+        // Use a simple visitor pattern to extract items from SlotDisplay
+        if (slotDisplay instanceof SlotDisplay.ItemStackSlotDisplay itemDisplay) {
+            result.add(itemDisplay.stack());
+        } else if (slotDisplay instanceof SlotDisplay.ItemSlotDisplay itemSlotDisplay) {
+            // Convert Item to ItemStack
+            result.add(new ItemStack(itemSlotDisplay.item()));
+        } else if (slotDisplay instanceof SlotDisplay.TagSlotDisplay tagDisplay) {
+            // For tag displays, iterate through registry to find items with this tag
+            var tagKey = tagDisplay.tag();
 
-        // FIX 2: PlacementInfo.ingredients() returns List<Ingredient>, not List<Optional<Ingredient>>
-        List<Ingredient> ingredients = info.ingredients();
-
-        for (Ingredient ingredient : ingredients) {
-            // FIX 3: ingredient.getItems() is removed. Use .items() stream.
-            ItemStack[] items = ingredient.items()
-                    .map(holder -> new ItemStack(holder.value()))
-                    .toArray(ItemStack[]::new);
-
-            if (items.length > 0) {
-                // Priority: Item already in cache
-                String bestItemId = null;
-                for (ItemStack stack : items) {
-                    String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                    if (hasInCache(id)) {
-                        bestItemId = id;
+            // Iterate through all items and check if they have this tag
+            for (var item : BuiltInRegistries.ITEM) {
+                // Check if this item belongs to the tag
+                var holder = BuiltInRegistries.ITEM.wrapAsHolder(item);
+                if (holder.is(tagKey)) {
+                    result.add(new ItemStack(item));
+                    // Only take first few items from tag to avoid too many results
+                    if (result.size() >= 5)
                         break;
-                    }
-                }
-
-                // If not in cache, use first variant
-                if (bestItemId == null) {
-                    bestItemId = BuiltInRegistries.ITEM.getKey(items[0].getItem()).toString();
-                }
-
-                needed.put(bestItemId, needed.getOrDefault(bestItemId, 0) + 1);
-            }
-        }
-
-        // FIX 4: Removed the broken 'inventory.items' loop.
-        // We use the standard accessor loop below which is safe.
-        Inventory inventory = minecraft.player.getInventory();
-
-        for (int i = 0; i < inventory.getContainerSize(); i++) {
-            ItemStack stack = inventory.getItem(i);
-            if (stack.isEmpty()) continue;
-
-            String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-            if (needed.containsKey(id)) {
-                int count = needed.get(id);
-                int inInv = stack.getCount();
-                if (inInv >= count) {
-                    needed.remove(id);
-                } else {
-                    needed.put(id, count - inInv);
                 }
             }
         }
 
-        // 3. Add to Request Queue
-        if (!needed.isEmpty()) {
-            boolean added = false;
-            for (Map.Entry<String, Integer> entry : needed.entrySet()) {
-                if (hasInCache(entry.getKey())) {
-                    sm.addToRequestQueue(entry.getKey(), entry.getValue());
-                    added = true;
-                }
-            }
-            if (added) {
-                sm.startRetrieval();
-            }
-        }
+        return result;
     }
 
     private boolean hasInCache(String itemId) {
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
-        for (Map<String, Integer> contents : cache.values()) {
-            if (contents.containsKey(itemId) && contents.get(itemId) > 0)
-                return true;
-        }
-        return false;
+        StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
+        return sm != null && sm.hasItemInCache(itemId);
     }
 }

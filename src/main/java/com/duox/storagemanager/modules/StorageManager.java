@@ -156,6 +156,19 @@ public class StorageManager extends Module {
         return requestQueue;
     }
 
+    public boolean hasItemInCache(String itemId) {
+        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
+        if (cache == null)
+            return false;
+
+        for (Map<String, Integer> content : cache.values()) {
+            if (content != null && content.containsKey(itemId) && content.get(itemId) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public void startRetrieval() {
         if (requestQueue.isEmpty()) {
             sendMessage("Queue is empty.");
@@ -205,7 +218,8 @@ public class StorageManager extends Module {
                 globalBuffer.putAll(loaded);
                 // Refresh activeCache based on current position and scan range
                 if (mc.player != null) {
-                    AutoStash autoStash = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(AutoStash.class);
+                    AutoStash autoStash = com.duox.storagemanager.system.ModuleManager.INSTANCE
+                            .getModule(AutoStash.class);
                     if (autoStash != null) {
                         autoStash.forceRefreshActiveCache();
                     }
@@ -269,7 +283,8 @@ public class StorageManager extends Module {
         }
     }
 
-    private void processChestContents(Map<String, Integer> contents, BlockPos chestPos, Map<String, Integer> remainingNeeds) {
+    private void processChestContents(Map<String, Integer> contents, BlockPos chestPos,
+            Map<String, Integer> remainingNeeds) {
         Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, Integer> req = it.next();
@@ -398,13 +413,16 @@ public class StorageManager extends Module {
 
         for (int i = 0; i < containerSlots; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
-            if (stack.isEmpty()) continue;
+            if (stack.isEmpty())
+                continue;
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-            if (!itemsToTake.containsKey(itemId)) continue;
+            if (!itemsToTake.containsKey(itemId))
+                continue;
 
             int needed = itemsToTake.get(itemId);
-            if (needed <= 0) continue;
+            if (needed <= 0)
+                continue;
 
             if (tryWithdrawItem(menu, i, stack, itemId, needed, containerSlots)) {
                 actionTaken = true;
@@ -417,7 +435,8 @@ public class StorageManager extends Module {
         }
     }
 
-    private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId, int needed, int containerSlots) {
+    private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId,
+            int needed, int containerSlots) {
         int inSlot = stack.getCount();
         int actualTaken = 0;
         boolean isPartial = false;
@@ -426,7 +445,8 @@ public class StorageManager extends Module {
             actualTaken = transferFullStack(menu, slotIndex, stack);
         } else {
             actualTaken = transferPartialStack(menu, slotIndex, needed, containerSlots);
-            if (actualTaken > 0) isPartial = true;
+            if (actualTaken > 0)
+                isPartial = true;
         }
 
         if (actualTaken > 0) {
@@ -517,7 +537,8 @@ public class StorageManager extends Module {
         private final Map<String, Integer> remainingNeeds;
         private final BlockPos playerPos;
 
-        public ChestComparator(Map<String, Map<String, Integer>> cache, Map<String, Integer> remainingNeeds, BlockPos playerPos) {
+        public ChestComparator(Map<String, Map<String, Integer>> cache, Map<String, Integer> remainingNeeds,
+                BlockPos playerPos) {
             this.cache = cache;
             this.remainingNeeds = remainingNeeds;
             this.playerPos = playerPos;

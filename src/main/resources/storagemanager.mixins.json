@@ -5,6 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "refmap": "storagemanager.refmap.json",
   "mixins": [
+    "ClientRecipeBookAccessor",
     "MixinClientPacketListener",
     "MixinContainerScreen",
     "MixinMinecraft",
