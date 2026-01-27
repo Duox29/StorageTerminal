@@ -213,7 +213,9 @@ public class StorageScreen extends Screen {
     public void onClose() {
         if (!keepModuleOn) {
             storageManager.clearRequestQueue();
-            // storageManager.setEnabled(false);
+            storageManager.setEnabled(false);
+        } else {
+            storageManager.setEnabled(false);
         }
         super.onClose();
     }
