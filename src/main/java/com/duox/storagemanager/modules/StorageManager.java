@@ -62,6 +62,16 @@ public class StorageManager extends Module {
     public final NumberSetting panelY = new NumberSetting("Panel Y", 100, 0, 1440, 1);
     public final BooleanSetting autoRequestRecipe = new BooleanSetting("Auto-Request Recipes", true);
 
+    // Panel settings
+    public final NumberSetting panelScale = new NumberSetting("Panel Scale", 1.0, 0.5, 2.0, 0.1);
+    public final NumberSetting panelGridCols = new NumberSetting("Panel Columns", 8, 4, 16, 1);
+    public final NumberSetting panelGridRows = new NumberSetting("Panel Rows", 7, 4, 16, 1);
+
+    // Screen settings
+    public final NumberSetting screenScale = new NumberSetting("Screen Scale", 1.0, 0.5, 2.0, 0.1);
+    public final NumberSetting screenGridCols = new NumberSetting("Screen Columns", 9, 4, 16, 1);
+    public final NumberSetting screenGridRows = new NumberSetting("Screen Rows", 9, 4, 16, 1);
+
     public StorageManager() {
         super("StorageManager", "Manage items from cached chests.", Category.UTILITY);
         this.getKeyMapping().setKey(
@@ -69,6 +79,12 @@ public class StorageManager extends Module {
         this.addSetting(panelX);
         this.addSetting(panelY);
         this.addSetting(autoRequestRecipe);
+        this.addSetting(panelScale);
+        this.addSetting(panelGridCols);
+        this.addSetting(panelGridRows);
+        this.addSetting(screenScale);
+        this.addSetting(screenGridCols);
+        this.addSetting(screenGridRows);
     }
 
     @Override

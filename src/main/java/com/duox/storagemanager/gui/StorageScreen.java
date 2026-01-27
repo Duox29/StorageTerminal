@@ -42,17 +42,15 @@ public class StorageScreen extends Screen {
     private int guiLeft;
     private int guiTop;
 
-    // UPDATE: Tăng chiều cao GUI để chứa đủ các khoảng trống
-    private static final int GUI_WIDTH = 196;
-    private static final int GUI_HEIGHT = 250; // Tăng từ 222 lên 250
+    // Dynamic sizing based on settings
+    private int GUI_WIDTH = 196;
+    private int GUI_HEIGHT = 250;
 
-    private static final int SLOT_SIZE = 18;
-    private static final int GRID_COLS = 9;
-    private static final int GRID_ROWS = 9;
-    private static final int GRID_X_OFFSET = 9;
-
-    // UPDATE: Đẩy Grid xuống thấp hơn để nhường chỗ cho Title & Search Box
-    private static final int GRID_Y_OFFSET = 50; // Tăng từ 36 lên 50
+    private int SLOT_SIZE = 18;
+    private int GRID_COLS = 9;
+    private int GRID_ROWS = 9;
+    private int GRID_X_OFFSET = 9;
+    private int GRID_Y_OFFSET = 50;
 
     // --- LOGIC ---
     private final StorageManager storageManager;
@@ -69,6 +67,11 @@ public class StorageScreen extends Screen {
 
     // Scrolling
     private float scrollPosition = 0.0f;
+
+    // Scrollbar drag support
+    private boolean isDraggingScrollbar = false;
+    private int scrollbarDragStartY = 0;
+    private float scrollPositionAtDragStart = 0.0f;
 
     private static class ItemEntry {
         ItemStack stack;
@@ -120,6 +123,9 @@ public class StorageScreen extends Screen {
         super(Component.literal("Storage Terminal"));
         this.storageManager = manager;
 
+        // Apply scale and grid settings
+        applyScaleSettings();
+
         // Initialize custom scroll handler with accessor for ItemEntry
         this.scrollHandler = new SlotScrollHandler<>(manager, new SlotScrollHandler.ItemEntryAccessor<ItemEntry>() {
             @Override
@@ -132,6 +138,19 @@ public class StorageScreen extends Screen {
                 return entry.totalCount;
             }
         });
+    }
+
+    private void applyScaleSettings() {
+        double scale = storageManager.screenScale.getValue();
+        GRID_COLS = storageManager.screenGridCols.getValue().intValue();
+        GRID_ROWS = storageManager.screenGridRows.getValue().intValue();
+
+        SLOT_SIZE = (int) (18 * scale);
+        GRID_X_OFFSET = (int) (9 * scale);
+        GRID_Y_OFFSET = (int) (50 * scale);
+
+        GUI_WIDTH = GRID_X_OFFSET + (GRID_COLS * SLOT_SIZE) + (int) (20 * scale);
+        GUI_HEIGHT = GRID_Y_OFFSET + (GRID_ROWS * SLOT_SIZE) + (int) (32 * scale);
     }
 
     @Override
@@ -353,6 +372,22 @@ public class StorageScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        // Check if clicking on scrollbar first
+        int scrollBarX = guiLeft + GUI_WIDTH - 16;
+        int scrollBarY = guiTop + GRID_Y_OFFSET;
+        int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
+
+        if (button == 0 && mouseX >= scrollBarX && mouseX <= scrollBarX + 10 &&
+            mouseY >= scrollBarY && mouseY <= scrollBarY + scrollBarHeight) {
+            int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+            if (totalRows > GRID_ROWS) {
+                isDraggingScrollbar = true;
+                scrollbarDragStartY = (int) mouseY;
+                scrollPositionAtDragStart = scrollPosition;
+                return true;
+            }
+        }
+
         if (super.mouseClicked(mouseX, mouseY, button))
             return true;
 
@@ -379,6 +414,41 @@ public class StorageScreen extends Screen {
         }
 
         return false;
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (isDraggingScrollbar && button == 0) {
+            isDraggingScrollbar = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (isDraggingScrollbar && button == 0) {
+            int scrollBarY = guiTop + GRID_Y_OFFSET;
+            int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
+            int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+
+            if (totalRows > GRID_ROWS) {
+                int thumbHeight = (int) ((float) (GRID_ROWS * GRID_ROWS) / totalRows * SLOT_SIZE);
+                if (thumbHeight < 32)
+                    thumbHeight = 32;
+                if (thumbHeight > scrollBarHeight)
+                    thumbHeight = scrollBarHeight;
+
+                int maxThumbTravel = scrollBarHeight - thumbHeight;
+                if (maxThumbTravel > 0) {
+                    int dragDelta = (int) (mouseY - scrollbarDragStartY);
+                    float deltaScroll = (float) dragDelta / maxThumbTravel;
+                    scrollPosition = Mth.clamp(scrollPositionAtDragStart + deltaScroll, 0.0f, 1.0f);
+                }
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     private void handleClick(ItemEntry entry, int button) {

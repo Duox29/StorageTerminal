@@ -29,8 +29,8 @@ import java.util.stream.Collectors;
 public class StoragePanel implements Renderable, GuiEventListener, NarratableEntry {
 
     // --- SETTINGS ---
-    private static final int PANEL_WIDTH = 180;
-    private static final int PANEL_HEIGHT = 200;
+    private int PANEL_WIDTH = 180;
+    private int PANEL_HEIGHT = 200;
     private static final int HEADER_HEIGHT = 20; // Chiều cao thanh tiêu đề
 
     // Position
@@ -48,11 +48,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private static final int COLOR_HEADER_HOVER = 0xFF404040;
 
     // Grid Settings
-    private static final int SLOT_SIZE = 18;
-    private static final int GRID_COLS = 8;
-    private static final int GRID_ROWS = 7;
-    private static final int GRID_X_OFFSET = 10;
-    private static final int GRID_Y_OFFSET = 45;
+    private int SLOT_SIZE = 18;
+    private int GRID_COLS = 8;
+    private int GRID_ROWS = 7;
+    private int GRID_X_OFFSET = 10;
+    private int GRID_Y_OFFSET = 45;
 
     // Components
     private final StorageManager storageManager;
@@ -76,6 +76,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private int dragOffsetY = 0;
     private boolean widgetFocused = false;
 
+    // Scrollbar drag support
+    private boolean isDraggingScrollbar = false;
+    private int scrollbarDragStartY = 0;
+    private float scrollPositionAtDragStart = 0.0f;
+
     private static class ItemEntry {
         ItemStack stack;
         String id;
@@ -94,6 +99,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         this.x = startX;
         this.y = startY;
 
+        // Apply scale and grid settings
+        applyScaleSettings();
+
         // Initialize custom scroll handler with accessor for ItemEntry
         this.scrollHandler = new SlotScrollHandler<>(manager, new SlotScrollHandler.ItemEntryAccessor<ItemEntry>() {
             @Override
@@ -108,6 +116,19 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         });
 
         initComponents();
+    }
+
+    private void applyScaleSettings() {
+        double scale = storageManager.panelScale.getValue();
+        GRID_COLS = storageManager.panelGridCols.getValue().intValue();
+        GRID_ROWS = storageManager.panelGridRows.getValue().intValue();
+
+        SLOT_SIZE = (int) (18 * scale);
+        GRID_X_OFFSET = (int) (10 * scale);
+        GRID_Y_OFFSET = (int) (45 * scale);
+
+        PANEL_WIDTH = GRID_X_OFFSET + (GRID_COLS * SLOT_SIZE) + (int) (16 * scale);
+        PANEL_HEIGHT = GRID_Y_OFFSET + (GRID_ROWS * SLOT_SIZE) + (int) (30 * scale);
     }
 
     private void initComponents() {
@@ -276,7 +297,24 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (!isMouseOver(mouseX, mouseY))
             return false;
 
-        // PRIORITY 1: Check if clicking on header for dragging (must be FIRST!)
+        // PRIORITY 1: Check if clicking on scrollbar
+        int scrollX = x + PANEL_WIDTH - 8;
+        int scrollY = y + GRID_Y_OFFSET;
+        int scrollH = GRID_ROWS * SLOT_SIZE;
+
+        if (button == 0 && mouseX >= scrollX && mouseX <= scrollX + 6 &&
+            mouseY >= scrollY && mouseY <= scrollY + scrollH) {
+            int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+            if (totalRows > GRID_ROWS) {
+                isDraggingScrollbar = true;
+                widgetFocused = true;
+                scrollbarDragStartY = (int) mouseY;
+                scrollPositionAtDragStart = scrollPosition;
+                return true;
+            }
+        }
+
+        // PRIORITY 2: Check if clicking on header for dragging
         // Only drag from the left portion of header to avoid conflicts with searchBox
         int headerDragWidth = PANEL_WIDTH - 130; // Leave space for searchBox on the right
         if (button == 0 && mouseX >= x && mouseX <= x + headerDragWidth &&
@@ -289,7 +327,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        // PRIORITY 2: Components
+        // PRIORITY 3: Components
         if (searchBox.mouseClicked(mouseX, mouseY, button)) {
             setFocusedListener(searchBox);
             return true;
@@ -301,7 +339,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (recipeButton.mouseClicked(mouseX, mouseY, button))
             return true;
 
-        // PRIORITY 3: Grid
+        // PRIORITY 4: Grid
         handleGridClick(mouseX, mouseY, button);
 
         return true;
@@ -309,6 +347,12 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (isDraggingScrollbar && button == 0) {
+            isDraggingScrollbar = false;
+            widgetFocused = false;
+            return true;
+        }
+
         if (isDragging && button == 0) {
             isDragging = false;
             widgetFocused = false; // Release focus
@@ -327,6 +371,27 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (isDraggingScrollbar && button == 0) {
+            // Calculate new scroll position based on drag
+            int scrollY = y + GRID_Y_OFFSET;
+            int scrollH = GRID_ROWS * SLOT_SIZE;
+            int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+
+            if (totalRows > GRID_ROWS) {
+                int thumbH = (int) ((float) (GRID_ROWS * GRID_ROWS) / totalRows * SLOT_SIZE);
+                thumbH = Math.max(20, Math.min(scrollH, thumbH));
+
+                int dragDelta = (int) (mouseY - scrollbarDragStartY);
+                int maxThumbTravel = scrollH - thumbH;
+
+                if (maxThumbTravel > 0) {
+                    float deltaScroll = (float) dragDelta / maxThumbTravel;
+                    scrollPosition = Mth.clamp(scrollPositionAtDragStart + deltaScroll, 0.0f, 1.0f);
+                }
+            }
+            return true;
+        }
+
         if (isDragging && button == 0) {
             // Update panel position
             x = (int) (mouseX - dragOffsetX);
@@ -416,7 +481,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean isFocused() {
-        return this.widgetFocused || this.isDragging;
+        return this.widgetFocused || this.isDragging || this.isDraggingScrollbar;
     }
 
     // --- Narration / Focus Boilerplate ---
