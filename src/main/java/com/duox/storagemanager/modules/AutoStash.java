@@ -581,25 +581,21 @@ public class AutoStash extends Module {
      * Event-driven cache refresh logic
      * Called from ModuleManager on tick to check if activeCache needs updating
      */
-    public void checkAndRefreshCache() {
+    public void forceRefreshActiveCache() {
         if (mc.player == null) return;
 
         BlockPos currentPos = mc.player.blockPosition();
+
+        // Get range directly from the module instance or settings
         StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
         double currentRange = sm != null ? sm.scanRange.getValue() : 16.0;
 
-        // Condition 1: Player moved more than 2 blocks
-        // Condition 2: Scan range setting changed
-        // Condition 3: First time initialization
-        if (lastUpdatePos == null ||
-            currentPos.distSqr(lastUpdatePos) > 4 ||
-            currentRange != lastRange) {
+        // Directly call internal refresh logic
+        refreshActiveCache(currentPos, currentRange);
 
-            refreshActiveCache(currentPos, currentRange);
-
-            lastUpdatePos = currentPos;
-            lastRange = currentRange;
-        }
+        // Update state tracking (optional, but good for debugging)
+        lastUpdatePos = currentPos;
+        lastRange = currentRange;
     }
 
     /**

@@ -95,7 +95,7 @@ public class ModuleManager {
             // Update Active Cache based on player movement and range changes
             AutoStash autoStash = getModule(AutoStash.class);
             if (autoStash != null) {
-                autoStash.checkAndRefreshCache();
+                autoStash.forceRefreshActiveCache();
             }
 
             List<Module> toggledModules = new ArrayList<>();

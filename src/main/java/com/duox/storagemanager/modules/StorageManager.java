@@ -203,12 +203,11 @@ public class StorageManager extends Module {
             if (loaded != null && !loaded.isEmpty()) {
                 // Load into globalBuffer
                 globalBuffer.putAll(loaded);
-
                 // Refresh activeCache based on current position and scan range
                 if (mc.player != null) {
                     AutoStash autoStash = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(AutoStash.class);
                     if (autoStash != null) {
-                        autoStash.checkAndRefreshCache();
+                        autoStash.forceRefreshActiveCache();
                     }
                 }
 

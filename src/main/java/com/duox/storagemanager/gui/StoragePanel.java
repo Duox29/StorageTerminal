@@ -98,7 +98,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         this.storageManager = manager;
         this.x = startX;
         this.y = startY;
-
+        // This ensures the overlay shows correct items for the current location
+        AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+        if (autoStash != null && Minecraft.getInstance().player != null) {
+            autoStash.forceRefreshActiveCache();
+        }
         // Apply scale and grid settings
         applyScaleSettings();
 
