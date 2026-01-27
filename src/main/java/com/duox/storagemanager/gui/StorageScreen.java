@@ -57,6 +57,8 @@ public class StorageScreen extends Screen {
     private EditBox searchBox;
     private ModernButton requestButton;
     private ModernButton autoStashButton;
+    private ModernButton clearCacheButton;
+    private ModernButton buildCacheButton;
 
     // Custom scroll handler
     private SlotScrollHandler<ItemEntry> scrollHandler;
@@ -201,11 +203,53 @@ public class StorageScreen extends Screen {
         });
         this.addRenderableWidget(autoStashButton);
 
-        this.addRenderableWidget(Button.builder(Component.literal("X"), b -> {
-            storageManager.setEnabled(false); // Tắt hẳn module
-            this.onClose(); // Đóng GUI
-        }).bounds(guiLeft + GUI_WIDTH - 20, guiTop - 20, 20, 20).build());
+        int topButtonsY = guiTop - 20; // Tọa độ Y của nút X hiện tại
+        int closeBtnX = guiLeft + GUI_WIDTH - 20; // Vị trí nút X
+        int buttonSpacing = 2; // Khoảng cách giữa các nút
+        int sideBtnWidth = 40; // Độ rộng nút Build/Clear
 
+        // 1. Nút Close (X) - Đã có sẵn, giữ nguyên tọa độ
+        this.addRenderableWidget(Button.builder(Component.literal("X"), b -> {
+            storageManager.setEnabled(false);
+            this.onClose();
+        }).bounds(closeBtnX, topButtonsY, 20, 20).build());
+
+        // 2. Nút Clear Cache (Nằm bên trái nút X)
+        int clearBtnX = closeBtnX - sideBtnWidth - buttonSpacing;
+        this.addRenderableWidget(Button.builder(Component.literal("Clear"), b -> {
+            com.duox.storagemanager.modules.AutoStash.getChestCache().clear();
+            com.duox.storagemanager.modules.AutoStash.cacheDirty = true;
+
+            java.nio.file.Path cacheFile = com.duox.storagemanager.utils.CacheUtils.getCacheFilePath(this.minecraft, "autostash");
+            try {
+                java.nio.file.Files.deleteIfExists(cacheFile);
+            } catch (java.io.IOException e) {
+                e.printStackTrace();
+            }
+
+            if (this.minecraft.player != null) {
+                this.minecraft.player.displayClientMessage(Component.literal("§6[Storage] §fCache cleared."), true);
+            }
+            refreshItemList();
+        }).bounds(clearBtnX, topButtonsY, sideBtnWidth, 20).build());
+
+        // 3. Nút Build Cache (Nằm bên trái nút Clear)
+        int buildBtnX = clearBtnX - sideBtnWidth - buttonSpacing;
+        this.addRenderableWidget(Button.builder(Component.literal("Build"), b -> {
+            com.duox.storagemanager.modules.AutoStash stash = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(com.duox.storagemanager.modules.AutoStash.class);
+            if (stash != null) {
+                // Tìm và bật setting Rebuild Cache
+                stash.getSettings().stream()
+                        .filter(s -> s.getName().equalsIgnoreCase("Rebuild Cache Next Run"))
+                        .findFirst()
+                        .ifPresent(s -> ((com.duox.storagemanager.system.settings.BooleanSetting) s).setValue(true));
+
+                stash.setEnabled(true);
+                if (this.minecraft.player != null) {
+                    this.minecraft.player.displayClientMessage(Component.literal("§b[Storage] §fRebuilding cache..."), true);
+                }
+            }
+        }).bounds(buildBtnX, topButtonsY, sideBtnWidth, 20).build());
         refreshItemList();
     }
 
@@ -213,9 +257,7 @@ public class StorageScreen extends Screen {
     public void onClose() {
         if (!keepModuleOn) {
             storageManager.clearRequestQueue();
-            storageManager.setEnabled(false);
-        } else {
-            storageManager.setEnabled(false);
+            //storageManager.setEnabled(false);
         }
         super.onClose();
     }

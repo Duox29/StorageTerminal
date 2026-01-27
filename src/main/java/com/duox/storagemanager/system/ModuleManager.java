@@ -1,5 +1,6 @@
 package com.duox.storagemanager.system;
 
+import com.duox.storagemanager.gui.StorageScreen;
 import com.duox.storagemanager.modules.*;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.common.NeoForge;
@@ -86,48 +87,60 @@ public class ModuleManager {
      */
     @SubscribeEvent
     public void onClientTick(ClientTickEvent.Post event) {
-        if (Minecraft.getInstance().player != null) {
-            // Xử lý manual cache update cho AutoStash (luôn chạy, không phụ thuộc vào module enabled)
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player != null) {
+            // Xử lý manual cache update cho AutoStash (luôn chạy ngầm)
             AutoStash.tickManualCacheUpdate();
 
-            // Handle module keybinds
             List<Module> toggledModules = new ArrayList<>();
             for (Module module : moduleMap.values()) {
                 if (module.isHold()) {
                     boolean isKeyDown = module.getKeyMapping().isDown();
                     if (module.isEnabled() != isKeyDown) {
-                         module.setEnabled(isKeyDown);
-                         // Optional: Don't notify for hold modules to avoid spam
-                         // toggledModules.add(module);
+                        module.setEnabled(isKeyDown);
                     }
-                    // Consume click to prevent it from accumulating
                     while (module.getKeyMapping().consumeClick()) {}
                 } else {
+                    // Xử lý click keybind
                     while (module.getKeyMapping().consumeClick()) {
-                        module.setEnabled(!module.isEnabled());
-                        toggledModules.add(module);
+                        if (module instanceof StorageManager sm) {
+                            // FIX: Nếu là StorageManager, bấm phím sẽ luôn mở GUI
+                            // Nếu module đang tắt, bật nó lên (hàm setEnabled(true) sẽ gọi onEnable() để mở GUI)
+                            if (!sm.isEnabled()) {
+                                sm.setEnabled(true);
+                                toggledModules.add(sm);
+                            } else {
+                                // Nếu module đã bật sẵn, chỉ việc mở lại GUI mà không toggle trạng thái
+                                mc.setScreen(new StorageScreen(sm));
+                            }
+                        } else {
+                            // Các module khác vẫn toggle bật/tắt bình thường
+                            module.setEnabled(!module.isEnabled());
+                            toggledModules.add(module);
+                        }
                     }
                 }
             }
 
+            // Hiển thị thông báo overlay khi trạng thái module thay đổi
             if (!toggledModules.isEmpty()) {
                 net.minecraft.network.chat.MutableComponent message = net.minecraft.network.chat.Component.empty();
                 for (int i = 0; i < toggledModules.size(); i++) {
                     Module m = toggledModules.get(i);
                     if (i > 0) message.append(net.minecraft.network.chat.Component.literal(", ").withStyle(net.minecraft.ChatFormatting.GRAY));
-                    
+
                     message.append(net.minecraft.network.chat.Component.literal(m.getName())
                             .withStyle(m.isEnabled() ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.RED));
                 }
-                Minecraft.getInstance().gui.setOverlayMessage(message, false);
+                mc.gui.setOverlayMessage(message, false);
             }
 
+            // Chạy logic tick cho các module đang bật
             moduleMap.values().stream()
                     .filter(Module::isEnabled)
                     .forEach(Module::onTick);
         }
     }
-
     /**
      * Initializes the module manager.
      * Registers event handlers and loads configuration.

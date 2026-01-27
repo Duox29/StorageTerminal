@@ -26,16 +26,9 @@ public abstract class MixinContainerScreen extends Screen {
     @Inject(method = "init", at = @At("TAIL"))
     private void onInit(CallbackInfo ci) {
         StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
+        // Panel này sẽ xuất hiện trong Rương/Shulker nếu Module StorageManager đang ENABLED.
         if (sm != null && sm.isEnabled()) {
-
-            // Read position from settings
-            int x = sm.panelX.getInt();
-            int y = sm.panelY.getInt();
-
-            storagePanel = new StoragePanel(sm, x, y);
-
-            // QUAN TRỌNG: Thêm Panel như một Widget chính thống
-            // Việc này tự động kích hoạt render, click, scroll, tooltip cho Panel
+            storagePanel = new StoragePanel(sm, sm.panelX.getInt(), sm.panelY.getInt());
             this.addRenderableWidget(storagePanel);
         }
     }
