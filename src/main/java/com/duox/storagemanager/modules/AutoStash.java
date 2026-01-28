@@ -101,9 +101,12 @@ public class AutoStash extends Module {
     private static int manualUpdateTimer = 0;
 
     private List<BlockPos> scanQueue = new ArrayList<>();
-    private Map<BlockPos, List<Integer>> stashQueue = new HashMap<>();
+    private Map<BlockPos, List<Integer>> stashQueue = new LinkedHashMap<>();
     private Iterator<Map.Entry<BlockPos, List<Integer>>> stashIterator;
     private Map.Entry<BlockPos, List<Integer>> currentStashEntry;
+
+    // Track chests đã được xử lý trong session hiện tại để tránh spam
+    private Set<BlockPos> processedChests = new HashSet<>();
 
     private enum State {
         IDLE,
@@ -160,6 +163,7 @@ public class AutoStash extends Module {
         stashQueue.clear();
         stashIterator = null;
         currentStashEntry = null;
+        processedChests.clear(); // Reset processed chests tracking
     }
 
     public boolean isSilentMode() {
@@ -282,14 +286,15 @@ public class AutoStash extends Module {
         Map<String, Map<String, Integer>> loaded = db.loadAll();
 
         // Migration path: if DB empty but JSON exists, load JSON then persist to DB
-//        if (loaded == null || loaded.isEmpty()) {
-//            Path jsonPath = CacheUtils.getCacheFilePath(mc, "autostash");
-//            Map<String, Map<String, Integer>> legacy = CacheUtils.loadFromJson(jsonPath, type);
-//            if (legacy != null && !legacy.isEmpty()) {
-//                db.replaceAll(legacy);
-//                loaded = legacy;
-//            }
-//        }
+        // if (loaded == null || loaded.isEmpty()) {
+        // Path jsonPath = CacheUtils.getCacheFilePath(mc, "autostash");
+        // Map<String, Map<String, Integer>> legacy = CacheUtils.loadFromJson(jsonPath,
+        // type);
+        // if (legacy != null && !legacy.isEmpty()) {
+        // db.replaceAll(legacy);
+        // loaded = legacy;
+        // }
+        // }
 
         if (loaded != null && !loaded.isEmpty() && globalBuffer.isEmpty()) {
             globalBuffer.putAll(loaded);
@@ -320,15 +325,25 @@ public class AutoStash extends Module {
     }
 
     private void calculateStashPlan() {
-        stashQueue.clear();
+        // Dynamic Re-planning: Mỗi item chỉ tìm 1 chest tốt nhất
+        // Sau khi deposit xong, sẽ gọi lại hàm này để tính lại plan
+        stashQueue = new LinkedHashMap<>();
+        if (mc.player == null)
+            return;
+
         LocalPlayer player = mc.player;
         int startInv = includeHotbar.getValue() ? 0 : 9;
+
         for (int i = startInv; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (stack.isEmpty())
                 continue;
+
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+
+            // Tìm chest TỐT NHẤT cho item này (dựa vào score)
             BlockPos bestChest = findBestChest(itemId);
+
             if (bestChest != null) {
                 stashQueue.computeIfAbsent(bestChest, k -> new ArrayList<>()).add(i);
             }
@@ -349,6 +364,10 @@ public class AutoStash extends Module {
 
             // Skip if out of range
             if (pos.distSqr(playerPos) > rangeSq)
+                continue;
+
+            // Skip if already processed in this session
+            if (processedChests.contains(pos))
                 continue;
 
             // Skip if doesn't contain item
@@ -378,12 +397,12 @@ public class AutoStash extends Module {
         double distance = Math.sqrt(pos.distSqr(mc.player.blockPosition()));
         double distScore = 1.0 / (1.0 + distance / 10.0); // Normalize to [0, 1]
 
-        // Factor 2: Item Concentration (more of this item = better fit)
-        int itemCount = contents.get(itemId);
-        double itemScore = Math.min(1.0, itemCount / 64.0); // Cap at 1 stack
-
         // Get max stack size for this specific item
         int maxStackSize = getMaxStackSize(itemId);
+
+        // Factor 2: Item Concentration (more of this item = better fit)
+        int itemCount = contents.getOrDefault(itemId, 0);
+        double itemScore = Math.min(1.0, itemCount / 64.0); // Cap at 1 stack
 
         // Factor 3: Space Availability
         ChestSpaceInfo spaceInfo = calculateChestSpace(pos, contents);
@@ -395,11 +414,14 @@ public class AutoStash extends Module {
             if (contents.containsKey(itemId)) {
                 int currentItemCount = contents.get(itemId);
 
-                if (currentItemCount >= maxStackSize) {
-                    // This item's stack is already full, cannot add more
+                // CRITICAL FIX: currentItemCount is TOTAL count, not per-slot
+                // Check if the last stack has space
+                int lastStackCount = currentItemCount % maxStackSize;
+                if (lastStackCount == 0) {
+                    // All stacks are full (e.g., 192 = 3 * 64)
                     return -1.0; // Exclude this chest from consideration
                 } else {
-                    // This item's stack has space, but penalize heavily since chest is full
+                    // Last stack has space (e.g., 130 = 2*64 + 2, last stack has 62 free)
                     spaceScore = 0.3;
                 }
             } else {
@@ -551,6 +573,47 @@ public class AutoStash extends Module {
         if (waitTimer <= 0) {
             // After waiting, rescan chest for most accurate data
             updateCurrentContainerToCache();
+
+            // Mark current chest as processed to avoid re-selecting it
+            if (currentTarget != null) {
+                processedChests.add(currentTarget);
+            }
+
+            // DYNAMIC RE-PLANNING: Kiểm tra xem còn items cần stash không
+            if (mc.player != null) {
+                LocalPlayer player = mc.player;
+                int startInv = includeHotbar.getValue() ? 0 : 9;
+                boolean hasItemsToStash = false;
+
+                // Kiểm tra xem còn items trong inventory không
+                for (int i = startInv; i < 36; i++) {
+                    ItemStack stack = player.getInventory().getItem(i);
+                    if (!stack.isEmpty()) {
+                        hasItemsToStash = true;
+                        break;
+                    }
+                }
+
+                if (hasItemsToStash) {
+                    // Refresh active cache với dữ liệu mới nhất
+                    StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE
+                            .getModule(StorageManager.class);
+                    double range = sm != null ? sm.scanRange.getValue() : 16.0;
+                    refreshActiveCache(player.blockPosition(), range);
+
+                    // RE-CALCULATE PLAN cho các items còn lại
+                    calculateStashPlan();
+
+                    if (!stashQueue.isEmpty()) {
+                        // Còn chest để stash, reset iterator và tiếp tục
+                        stashIterator = stashQueue.entrySet().iterator();
+                        currentState = State.CLOSING_AFTER_STASH;
+                        return;
+                    }
+                }
+            }
+
+            // Không còn gì để stash hoặc không còn chest phù hợp
             currentState = State.CLOSING_AFTER_STASH;
         }
     }
@@ -735,7 +798,8 @@ public class AutoStash extends Module {
 
     /**
      * Clear all in-memory caches and persisted storage.
-     * Used by the StorageScreen clear button to ensure both active and global caches reset.
+     * Used by the StorageScreen clear button to ensure both active and global
+     * caches reset.
      */
     public static void clearCachesAndStorage(Minecraft mc) {
         globalBuffer.clear();
