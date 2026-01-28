@@ -107,7 +107,7 @@ public class UtilityGui extends Screen {
         guiGraphics.fill(SIDEBAR_WIDTH, TOP_BAR_HEIGHT, this.width, this.height, 0x80000000);
         guiGraphics.vLine(SIDEBAR_WIDTH, TOP_BAR_HEIGHT, this.height, 0xFFFFFFFF);
         guiGraphics.hLine(0, this.width, TOP_BAR_HEIGHT, 0xFFFFFFFF);
-        guiGraphics.drawString(this.font, "Adv. Utils", 10, 11, 0xFFFFFF, false);
+        guiGraphics.drawString(this.font, "Adv. Utils", 10, 11, 0xFFFFFFFF, false);
 
         // 2. Draw Tabs
         int tabX = 80;
@@ -125,13 +125,13 @@ public class UtilityGui extends Screen {
 
         // 4. Draw Settings
         if (selectedModule != null) {
-            guiGraphics.drawString(this.font, "Settings: " + selectedModule.getName(), SIDEBAR_WIDTH + 20, TOP_BAR_HEIGHT + 15, 0xFFFF00, false);
+            guiGraphics.drawString(this.font, "Settings: " + selectedModule.getName(), SIDEBAR_WIDTH + 20, TOP_BAR_HEIGHT + 15, 0xFFFFFF00, false);
             for (SettingWidget w : customRenderWidgets) {
                 w.render(guiGraphics, mouseX, mouseY, partialTick);
             }
         } else {
             guiGraphics.drawCenteredString(this.font, "Select a module to edit settings",
-                    SIDEBAR_WIDTH + (this.width - SIDEBAR_WIDTH) / 2, this.height / 2, 0xAAAAAA);
+                    SIDEBAR_WIDTH + (this.width - SIDEBAR_WIDTH) / 2, this.height / 2, 0xFFAAAAAA);
         }
 
         super.render(guiGraphics, mouseX, mouseY, partialTick);
@@ -143,7 +143,7 @@ public class UtilityGui extends Screen {
         int btnY = TOP_BAR_HEIGHT + 10;
 
         if (modulesToDisplay.isEmpty()) {
-            guiGraphics.drawCenteredString(this.font, "Empty", SIDEBAR_WIDTH / 2, btnY, 0xAAAAAA);
+            guiGraphics.drawCenteredString(this.font, "Empty", SIDEBAR_WIDTH / 2, btnY, 0xFFAAAAAA);
             return;
         }
 
@@ -155,8 +155,11 @@ public class UtilityGui extends Screen {
 
             guiGraphics.fill(btnX, btnY, btnX + MODULE_BTN_WIDTH, btnY + MODULE_BTN_HEIGHT, color);
             if (isSelected) guiGraphics.renderOutline(btnX - 1, btnY - 1, MODULE_BTN_WIDTH + 2, MODULE_BTN_HEIGHT + 2, 0xFF3498DB);
-            guiGraphics.drawCenteredString(this.font, mod.getName(), btnX + MODULE_BTN_WIDTH / 2, btnY + 7, 0xFFFFFF);
-            guiGraphics.setTooltipForNextFrame(this.font, Component.literal(mod.getDescription()), mouseX, mouseY);            btnY += MODULE_BTN_HEIGHT + PADDING;
+            guiGraphics.drawCenteredString(this.font, mod.getName(), btnX + MODULE_BTN_WIDTH / 2, btnY + 7, 0xFFFFFFFF);
+            if (isHovered) {
+                guiGraphics.setTooltipForNextFrame(this.font, Component.literal(mod.getDescription()), mouseX, mouseY);
+            }
+            btnY += MODULE_BTN_HEIGHT + PADDING;
         }
     }
 
@@ -206,7 +209,7 @@ public class UtilityGui extends Screen {
         int c = s ? 0xFF3498DB : 0xFF2C3E50;
         if (isInside(mx, my, x, y, w, h) && !s) c = 0xFF34495E;
         g.fill(x, y, x + w, y + h, c);
-        g.drawCenteredString(this.font, t, x + w / 2, y + 8, s ? 0xFFFF00 : 0xAAAAAA);
+        g.drawCenteredString(this.font, t, x + w / 2, y + 8, s ? 0xFFFFFF00 : 0xFFAAAAAA);
     }
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
