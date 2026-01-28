@@ -86,4 +86,5 @@ neoForge {
 
 dependencies {
     // implementation "net.neoforged:neoforge:${neo_version}"
+    implementation "org.xerial:sqlite-jdbc:3.45.3.0"
 }

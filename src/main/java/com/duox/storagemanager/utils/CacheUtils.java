@@ -62,13 +62,24 @@ public class CacheUtils {
      * Generates a safe file path based on the current server/world context.
      */
     public static Path getCacheFilePath(Minecraft mc, String prefix) {
-        String serverId = getServerIdentifier(mc);
-        // Sanitize filename to prevent IO issues
-        String safeId = serverId.replaceAll("[^a-zA-Z0-9._-]", "_");
+        String safeId = getSafeServerIdentifier(mc);
         return FMLPaths.CONFIGDIR.get().resolve(prefix + "_" + safeId + ".json");
     }
 
-    private static String getServerIdentifier(Minecraft mc) {
+    public static Path getCacheDbPath(Minecraft mc, String prefix) {
+        String safeId = getSafeServerIdentifier(mc);
+        return FMLPaths.CONFIGDIR.get().resolve(prefix + "_" + safeId + ".db");
+    }
+
+    /**
+     * Returns a stable identifier for the current server/world, sanitized for filenames.
+     */
+    public static String getSafeServerIdentifier(Minecraft mc) {
+        String serverId = getServerIdentifier(mc);
+        return serverId.replaceAll("[^a-zA-Z0-9._-]", "_");
+    }
+
+    public static String getServerIdentifier(Minecraft mc) {
         if (mc.getSingleplayerServer() != null) {
             return "sp_" + mc.getSingleplayerServer().getWorldData().getLevelName();
         } else if (mc.getCurrentServer() != null) {

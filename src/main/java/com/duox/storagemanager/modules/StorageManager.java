@@ -5,6 +5,7 @@ import com.duox.storagemanager.system.Category;
 import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
+import com.duox.storagemanager.utils.CacheDatabase;
 import com.duox.storagemanager.utils.CacheUtils;
 import com.duox.storagemanager.utils.InventoryUtils;
 import com.google.gson.reflect.TypeToken;
@@ -207,18 +208,29 @@ public class StorageManager extends Module {
     // --- Internal Logic ---
 
     /**
-     * Load cache from file if not already loaded
-     * PUBLIC so it can be called from StorageScreen constructor
+     * Load cache from DB (with legacy JSON migration) if not already loaded.
+     * PUBLIC so it can be called from StorageScreen constructor.
      */
     public void ensureCacheLoaded() {
         Map<String, Map<String, Integer>> globalBuffer = AutoStash.getGlobalBuffer();
 
-        // If globalBuffer is empty, try to load from file
+        // If globalBuffer is empty, try to load from DB
         if (globalBuffer.isEmpty()) {
-            Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
+            CacheDatabase db = CacheDatabase.getInstance(mc);
             Type type = new TypeToken<Map<String, Map<String, Integer>>>() {
             }.getType();
-            Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
+
+            Map<String, Map<String, Integer>> loaded = db.loadAll();
+
+            // Legacy migration: if DB empty but JSON exists, load JSON then persist to DB
+            // if (loaded == null || loaded.isEmpty()) {
+            //     Path jsonPath = CacheUtils.getCacheFilePath(mc, "autostash");
+            //     Map<String, Map<String, Integer>> legacy = CacheUtils.loadFromJson(jsonPath, type);
+            //     if (legacy != null && !legacy.isEmpty()) {
+            //         db.replaceAll(legacy);
+            //         loaded = legacy;
+            //     }
+            // }
 
             if (loaded != null && !loaded.isEmpty()) {
                 // Load into globalBuffer

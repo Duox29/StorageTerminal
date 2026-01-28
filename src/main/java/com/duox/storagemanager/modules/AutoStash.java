@@ -4,8 +4,8 @@ import com.duox.storagemanager.system.Category;
 import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
+import com.duox.storagemanager.utils.CacheDatabase;
 import com.duox.storagemanager.utils.CacheUtils;
-import com.google.gson.reflect.TypeToken;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -27,9 +27,13 @@ import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 
-import java.lang.reflect.Type;
-import java.nio.file.Path;
 import java.util.*;
+import java.lang.reflect.Type;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.io.IOException;
+
+import com.google.gson.reflect.TypeToken;
 
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
@@ -244,8 +248,8 @@ public class AutoStash extends Module {
 
     private void processScanQueue() {
         if (scanQueue.isEmpty()) {
-            Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
-            CacheUtils.saveToJson(cacheFile, globalBuffer);
+            CacheDatabase db = CacheDatabase.getInstance(mc);
+            db.replaceAll(globalBuffer);
             rebuildCache.setValue(false);
 
             // After rebuild, refresh active cache based on current position
@@ -271,12 +275,23 @@ public class AutoStash extends Module {
 
     // --- Smart Stash Logic ---
     private void startSmartStash() {
-        Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
+        CacheDatabase db = CacheDatabase.getInstance(mc);
         Type type = new TypeToken<Map<String, Map<String, Integer>>>() {
         }.getType();
-        Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
 
-        if (loaded != null && globalBuffer.isEmpty()) {
+        Map<String, Map<String, Integer>> loaded = db.loadAll();
+
+        // Migration path: if DB empty but JSON exists, load JSON then persist to DB
+//        if (loaded == null || loaded.isEmpty()) {
+//            Path jsonPath = CacheUtils.getCacheFilePath(mc, "autostash");
+//            Map<String, Map<String, Integer>> legacy = CacheUtils.loadFromJson(jsonPath, type);
+//            if (legacy != null && !legacy.isEmpty()) {
+//                db.replaceAll(legacy);
+//                loaded = legacy;
+//            }
+//        }
+
+        if (loaded != null && !loaded.isEmpty() && globalBuffer.isEmpty()) {
             globalBuffer.putAll(loaded);
             cacheDirty = true;
         }
@@ -572,8 +587,8 @@ public class AutoStash extends Module {
             // Set dirty flag for GUI update
             cacheDirty = true;
 
-            Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
-            CacheUtils.updateSpecificJsonObject(cacheFile, posKey, contents);
+            CacheDatabase db = CacheDatabase.getInstance(mc);
+            db.upsertChest(posKey, contents);
         }
     }
 
@@ -705,17 +720,44 @@ public class AutoStash extends Module {
         String key = CacheUtils.posToString(pos);
         globalBuffer.put(key, newData);
 
-        // Sync to file immediately (ConfigManager handles debounce if needed)
+        // Sync to SQLite immediately
         Minecraft mc = Minecraft.getInstance();
-        Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
-        CacheUtils.saveToJson(cacheFile, globalBuffer);
+        CacheDatabase db = CacheDatabase.getInstance(mc);
+        db.upsertChest(key, newData);
 
         // Force refresh active cache on next tick
-        // (By clearing lastUpdatePos of current AutoStash instance)
         AutoStash instance = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(AutoStash.class);
         if (instance != null) {
             instance.lastUpdatePos = null;
             AutoStash.cacheDirty = true;
+        }
+    }
+
+    /**
+     * Clear all in-memory caches and persisted storage.
+     * Used by the StorageScreen clear button to ensure both active and global caches reset.
+     */
+    public static void clearCachesAndStorage(Minecraft mc) {
+        globalBuffer.clear();
+        activeCache.clear();
+        cacheDirty = true;
+
+        if (mc != null) {
+            CacheDatabase db = CacheDatabase.getInstance(mc);
+            db.clearServer();
+
+            Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
+            try {
+                Files.deleteIfExists(cacheFile);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        AutoStash instance = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(AutoStash.class);
+        if (instance != null) {
+            instance.lastUpdatePos = null;
+            instance.lastRange = -1;
         }
     }
 
@@ -836,9 +878,9 @@ public class AutoStash extends Module {
 
             cacheDirty = true;
 
-            // Save to file
-            Path cacheFile = CacheUtils.getCacheFilePath(minecraft, "autostash");
-            CacheUtils.updateSpecificJsonObject(cacheFile, posKey, contents);
+            // Save to DB
+            CacheDatabase db = CacheDatabase.getInstance(minecraft);
+            db.upsertChest(posKey, contents);
 
             // Notify player (optional)
             // sendMessage("§aCache updated for chest at " + posKey);

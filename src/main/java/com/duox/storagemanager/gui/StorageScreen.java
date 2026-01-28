@@ -4,6 +4,7 @@ import com.duox.storagemanager.gui.widgets.SlotScrollHandler;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.duox.storagemanager.utils.CacheDatabase;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -225,20 +226,15 @@ public class StorageScreen extends Screen {
         // 2. Nút Clear Cache (Nằm bên trái nút X)
         int clearBtnX = closeBtnX - sideBtnWidth - buttonSpacing;
         this.addRenderableWidget(Button.builder(Component.literal("Clear"), b -> {
-            com.duox.storagemanager.modules.AutoStash.getChestCache().clear();
-            com.duox.storagemanager.modules.AutoStash.cacheDirty = true;
+            // Clear both active and global caches and wipe persistence
+            AutoStash.clearCachesAndStorage(this.minecraft);
 
-            java.nio.file.Path cacheFile = com.duox.storagemanager.utils.CacheUtils.getCacheFilePath(this.minecraft, "autostash");
-            try {
-                java.nio.file.Files.deleteIfExists(cacheFile);
-            } catch (java.io.IOException e) {
-                e.printStackTrace();
-            }
+            // Refresh visible list immediately
+            refreshItemList();
 
             if (this.minecraft.player != null) {
                 this.minecraft.player.displayClientMessage(Component.literal("§6[Storage] §fCache cleared."), true);
             }
-            refreshItemList();
         }).bounds(clearBtnX, topButtonsY, sideBtnWidth, 20).build());
 
         // 3. Nút Build Cache (Nằm bên trái nút Clear)
