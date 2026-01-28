@@ -27,18 +27,30 @@ public abstract class MixinContainerScreen extends Screen {
     @Inject(method = "init", at = @At("TAIL"))
     private void onInit(CallbackInfo ci) {
         StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
-        // Panel này sẽ xuất hiện trong Rương/Shulker nếu Module StorageManager đang ENABLED.
+        // Panel này sẽ xuất hiện trong Rương/Shulker nếu Module StorageManager đang
+        // ENABLED.
         if (sm != null && sm.isEnabled()) {
             storagePanel = new StoragePanel(sm, sm.panelX.getInt(), sm.panelY.getInt());
             this.addRenderableWidget(storagePanel);
         }
     }
 
-    // FIX: Updated signature to match Minecraft 1.21+ Screen.mouseDragged(MouseButtonEvent, double, double)
+    // FIX: Updated signature to match Minecraft 1.21+
+    // Screen.mouseDragged(MouseButtonEvent, double, double)
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
-    private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY, CallbackInfoReturnable<Boolean> cir) {
+    private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY,
+            CallbackInfoReturnable<Boolean> cir) {
         // Pass the event object directly to storagePanel
         if (storagePanel != null && storagePanel.mouseDragged(event, dragX, dragY)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    // Inject mouseScrolled to forward scroll events to StoragePanel
+    @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
+    private void onMouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (storagePanel != null && storagePanel.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
             cir.setReturnValue(true);
         }
     }
