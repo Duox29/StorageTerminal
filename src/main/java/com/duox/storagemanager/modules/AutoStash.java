@@ -34,6 +34,15 @@ import java.util.*;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
 
+/**
+ * AutoStash Module
+ * 
+ * Scans chests to build a global cache of items and intelligently stashes items
+ * from the player's inventory into the most appropriate chests based on
+ * distance, item grouping, and available space.
+ * 
+ * Also handles manual cache updates when players interact with chests.
+ */
 public class AutoStash extends Module {
     // --- Settings ---
     private final NumberSetting range = new NumberSetting("Range", 5.0, 1.0, 10.0, 0.5);
@@ -43,17 +52,19 @@ public class AutoStash extends Module {
 
     // --- Scoring Weight Settings ---
     private final NumberSetting distanceWeight = new NumberSetting("Distance Weight", 0.2, 0.0, 1.0, 0.1);
-    private final NumberSetting itemConcentrationWeight = new NumberSetting("Item Concentration Weight", 0.4, 0.0, 1.0, 0.1);
+    private final NumberSetting itemConcentrationWeight = new NumberSetting("Item Concentration Weight", 0.4, 0.0, 1.0,
+            0.1);
     private final NumberSetting spaceWeight = new NumberSetting("Space Weight", 0.4, 0.0, 1.0, 0.1);
 
     // --- Cache Data Structures ---
     // Global Buffer: Contains ALL chest data loaded from file
     private static Map<String, Map<String, Integer>> globalBuffer = new HashMap<>();
 
-    // Active Cache: Contains only chests within scan range (used by UI and operations)
+    // Active Cache: Contains only chests within scan range (used by UI and
+    // operations)
     private static Map<String, Map<String, Integer>> activeCache = new HashMap<>();
 
-    // Cờ đánh dấu cache đã thay đổi
+    // Flag indicating cache has changed
     public static boolean cacheDirty = false;
 
     // Position tracking for event-driven cache refresh
@@ -99,13 +110,15 @@ public class AutoStash extends Module {
         OPENING_FOR_STASH,
         WAITING_FOR_STASH_OPEN,
         STASHING_ITEMS,
-        WAITING_FOR_UPDATE, // [NEW] Chờ server đồng bộ item vào rương
+        WAITING_FOR_UPDATE, // Wait for server to sync items to chest
         CLOSING_AFTER_STASH
     }
+
     public AutoStash() {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.", Category.UTILITY);
 
-        this.getKeyMapping().setKey(com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_B));
+        this.getKeyMapping().setKey(
+                com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_B));
         this.addSetting(range);
         this.addSetting(includeHotbar);
         this.addSetting(itemsPerTick);
@@ -117,7 +130,8 @@ public class AutoStash extends Module {
 
     @Override
     public void onEnable() {
-        if (mc.player == null || mc.level == null) return;
+        if (mc.player == null || mc.level == null)
+            return;
         resetState();
         if (rebuildCache.getValue()) {
             startRebuildCache();
@@ -128,7 +142,8 @@ public class AutoStash extends Module {
 
     @Override
     public void onDisable() {
-        if (silentContainerId != -1 && mc.player != null) sendClosePacket();
+        if (silentContainerId != -1 && mc.player != null)
+            sendClosePacket();
         resetState();
     }
 
@@ -143,7 +158,9 @@ public class AutoStash extends Module {
         currentStashEntry = null;
     }
 
-    public boolean isSilentMode() { return this.isEnabled(); }
+    public boolean isSilentMode() {
+        return this.isEnabled();
+    }
 
     public void onSilentContainerOpen(int containerId, MenuType<?> menuType) {
         this.silentContainerId = containerId;
@@ -152,29 +169,55 @@ public class AutoStash extends Module {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.level == null) { this.setEnabled(false); return; }
+        if (mc.player == null || mc.level == null) {
+            this.setEnabled(false);
+            return;
+        }
 
-        // Xử lý manual cache update (chạy luôn, không phụ thuộc vào trạng thái của module)
+        // Process manual cache update (runs continuously)
         processManualCacheUpdate();
 
         switch (currentState) {
-            case SCANNING_WORLD: processScanQueue(); break;
-            case OPENING_FOR_SCAN: openTargetSilent(); break;
-            case WAITING_FOR_SCAN_OPEN: waitForContainer(State.SCANNING_CONTENTS); break;
-            case SCANNING_CONTENTS: scanContainerContents(); break;
-            case CLOSING_AFTER_SCAN: closeSilent(State.SCANNING_WORLD); break;
+            case SCANNING_WORLD:
+                processScanQueue();
+                break;
+            case OPENING_FOR_SCAN:
+                openTargetSilent();
+                break;
+            case WAITING_FOR_SCAN_OPEN:
+                waitForContainer(State.SCANNING_CONTENTS);
+                break;
+            case SCANNING_CONTENTS:
+                scanContainerContents();
+                break;
+            case CLOSING_AFTER_SCAN:
+                closeSilent(State.SCANNING_WORLD);
+                break;
 
-            case CALCULATING_STASH: break;
-            case OPENING_FOR_STASH: openTargetSilent(); break;
-            case WAITING_FOR_STASH_OPEN: waitForContainer(State.STASHING_ITEMS); break;
-            case STASHING_ITEMS: performStash(); break;
-            case WAITING_FOR_UPDATE: waitForUpdate(); break; // [NEW] Xử lý chờ
-            case CLOSING_AFTER_STASH: closeSilent(State.OPENING_FOR_STASH); break;
-            case IDLE: default: break;
+            case CALCULATING_STASH:
+                break;
+            case OPENING_FOR_STASH:
+                openTargetSilent();
+                break;
+            case WAITING_FOR_STASH_OPEN:
+                waitForContainer(State.STASHING_ITEMS);
+                break;
+            case STASHING_ITEMS:
+                performStash();
+                break;
+            case WAITING_FOR_UPDATE:
+                waitForUpdate();
+                break; // Handle waiting state
+            case CLOSING_AFTER_STASH:
+                closeSilent(State.OPENING_FOR_STASH);
+                break;
+            case IDLE:
+            default:
+                break;
         }
     }
 
-    // ... (Giữ nguyên logic Rebuild Cache) ...
+    // --- Rebuild Cache Logic ---
     private void startRebuildCache() {
         globalBuffer.clear();
         activeCache.clear();
@@ -188,7 +231,8 @@ public class AutoStash extends Module {
                     BlockPos pos = playerPos.offset(x, y, z);
                     BlockEntity be = mc.level.getBlockEntity(pos);
                     if (isValidContainer(be)) {
-                        if (isDuplicateDoubleChest(be)) continue;
+                        if (isDuplicateDoubleChest(be))
+                            continue;
                         scanQueue.add(pos);
                     }
                 }
@@ -206,7 +250,8 @@ public class AutoStash extends Module {
 
             // After rebuild, refresh active cache based on current position
             if (mc.player != null) {
-                StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+                StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE
+                        .getModule(StorageManager.class);
                 double range = sm != null ? sm.scanRange.getValue() : 16.0;
                 refreshActiveCache(mc.player.blockPosition(), range);
             }
@@ -224,10 +269,11 @@ public class AutoStash extends Module {
         currentState = State.CLOSING_AFTER_SCAN;
     }
 
-    // ... (Logic Smart Stash) ...
+    // --- Smart Stash Logic ---
     private void startSmartStash() {
         Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
-        Type type = new TypeToken<Map<String, Map<String, Integer>>>(){}.getType();
+        Type type = new TypeToken<Map<String, Map<String, Integer>>>() {
+        }.getType();
         Map<String, Map<String, Integer>> loaded = CacheUtils.loadFromJson(cacheFile, type);
 
         if (loaded != null && globalBuffer.isEmpty()) {
@@ -264,7 +310,8 @@ public class AutoStash extends Module {
         int startInv = includeHotbar.getValue() ? 0 : 9;
         for (int i = startInv; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
-            if (stack.isEmpty()) continue;
+            if (stack.isEmpty())
+                continue;
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
             BlockPos bestChest = findBestChest(itemId);
             if (bestChest != null) {
@@ -286,10 +333,12 @@ public class AutoStash extends Module {
             BlockPos pos = CacheUtils.stringToPos(posStr);
 
             // Skip if out of range
-            if (pos.distSqr(playerPos) > rangeSq) continue;
+            if (pos.distSqr(playerPos) > rangeSq)
+                continue;
 
             // Skip if doesn't contain item
-            if (!contents.containsKey(itemId)) continue;
+            if (!contents.containsKey(itemId))
+                continue;
 
             // Calculate multi-factor score
             double score = calculateChestScore(pos, contents, itemId);
@@ -304,9 +353,9 @@ public class AutoStash extends Module {
     /**
      * Calculate a multi-factor score for chest selection
      *
-     * @param pos Chest position
+     * @param pos      Chest position
      * @param contents Chest contents (itemId -> count)
-     * @param itemId Item to stash
+     * @param itemId   Item to stash
      * @return Score (higher = better fit)
      */
     private double calculateChestScore(BlockPos pos, Map<String, Integer> contents, String itemId) {
@@ -352,7 +401,8 @@ public class AutoStash extends Module {
 
         // Weighted Score
         double totalWeight = distanceWeight.getValue() + itemConcentrationWeight.getValue() + spaceWeight.getValue();
-        if (totalWeight == 0) totalWeight = 1.0; // Prevent division by zero
+        if (totalWeight == 0)
+            totalWeight = 1.0; // Prevent division by zero
 
         return (distScore * distanceWeight.getValue() +
                 itemScore * itemConcentrationWeight.getValue() +
@@ -409,7 +459,8 @@ public class AutoStash extends Module {
             net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
             if (state.hasProperty(ChestBlock.TYPE)) {
                 ChestType type = state.getValue(ChestBlock.TYPE);
-                if (type == ChestType.SINGLE) return 27;
+                if (type == ChestType.SINGLE)
+                    return 27;
                 // For double chests, we only scan RIGHT half, which has 27 slots
                 return 27;
             }
@@ -462,7 +513,8 @@ public class AutoStash extends Module {
         Iterator<Integer> it = slotsToMove.iterator();
         while (it.hasNext() && moves < limit) {
             int invSlotIndex = it.next();
-            int menuSlotId = (invSlotIndex < 9) ? containerSlots + 27 + invSlotIndex : containerSlots + (invSlotIndex - 9);
+            int menuSlotId = (invSlotIndex < 9) ? containerSlots + 27 + invSlotIndex
+                    : containerSlots + (invSlotIndex - 9);
             Slot slot = menu.getSlot(menuSlotId);
             if (slot.hasItem()) {
                 sendQuickMovePacket(menu, menuSlotId);
@@ -471,25 +523,26 @@ public class AutoStash extends Module {
             it.remove();
         }
 
-        // Khi đã gửi hết packet chuyển đồ, chuyển sang trạng thái chờ đồng bộ
+        // When all transfer packets are sent, switch to waiting state for sync
         if (slotsToMove.isEmpty()) {
             currentState = State.WAITING_FOR_UPDATE;
-            waitTimer = 10; // Chờ 10 ticks (0.5 giây) để server cập nhật rương
+            waitTimer = 10; // Wait 10 ticks (0.5s) for server to update chest
         }
     }
 
-    // [NEW] Hàm chờ đồng bộ
+    // Wait for synchronization
     private void waitForUpdate() {
         waitTimer--;
         if (waitTimer <= 0) {
-            // Sau khi chờ xong, quét lại rương để lấy số liệu chuẩn xác nhất
+            // After waiting, rescan chest for most accurate data
             updateCurrentContainerToCache();
             currentState = State.CLOSING_AFTER_STASH;
         }
     }
 
     private void updateCurrentContainerToCache() {
-        if (currentTarget == null || mc.player == null) return;
+        if (currentTarget == null || mc.player == null)
+            return;
         AbstractContainerMenu menu = mc.player.containerMenu;
         int containerSlots = menu.slots.size() - 36;
         if (containerSlots > 0) {
@@ -508,14 +561,15 @@ public class AutoStash extends Module {
 
             // Only add to activeCache if within range
             if (mc.player != null) {
-                StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(StorageManager.class);
+                StorageManager sm = com.duox.storagemanager.system.ModuleManager.INSTANCE
+                        .getModule(StorageManager.class);
                 double scanRange = sm != null ? sm.scanRange.getValue() : 16.0;
                 if (currentTarget.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
                     activeCache.put(posKey, contents);
                 }
             }
 
-            // Bật cờ dirty để GUI cập nhật
+            // Set dirty flag for GUI update
             cacheDirty = true;
 
             Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
@@ -523,16 +577,18 @@ public class AutoStash extends Module {
         }
     }
 
-    // ... (Các helper methods khác giữ nguyên) ...
+    // --- Helper Methods ---
     private void openTargetSilent() {
-        if (currentTarget == null) return;
+        if (currentTarget == null)
+            return;
         Vec3 center = Vec3.atCenterOf(currentTarget);
         BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, currentTarget, false);
         containerReady = false;
         silentContainerId = -1;
         mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
         mc.player.swing(InteractionHand.MAIN_HAND);
-        currentState = (currentState == State.OPENING_FOR_SCAN) ? State.WAITING_FOR_SCAN_OPEN : State.WAITING_FOR_STASH_OPEN;
+        currentState = (currentState == State.OPENING_FOR_SCAN) ? State.WAITING_FOR_SCAN_OPEN
+                : State.WAITING_FOR_STASH_OPEN;
         waitTimer = 20;
     }
 
@@ -543,8 +599,10 @@ public class AutoStash extends Module {
         }
         waitTimer--;
         if (waitTimer <= 0) {
-            if (currentState == State.WAITING_FOR_SCAN_OPEN) currentState = State.SCANNING_WORLD;
-            else currentState = State.CLOSING_AFTER_STASH;
+            if (currentState == State.WAITING_FOR_SCAN_OPEN)
+                currentState = State.SCANNING_WORLD;
+            else
+                currentState = State.CLOSING_AFTER_STASH;
         }
     }
 
@@ -552,34 +610,44 @@ public class AutoStash extends Module {
         sendClosePacket();
         silentContainerId = -1;
         containerReady = false;
-        if (nextState == State.OPENING_FOR_STASH) moveToNextStashTarget();
-        else currentState = nextState;
+        if (nextState == State.OPENING_FOR_STASH)
+            moveToNextStashTarget();
+        else
+            currentState = nextState;
     }
 
     private void sendMessage(String message) {
-        if (mc.player != null) mc.player.displayClientMessage(Component.literal("§b[AutoStash] §r" + message), false);
+        if (mc.player != null)
+            mc.player.displayClientMessage(Component.literal("§b[AutoStash] §r" + message), false);
     }
-    private boolean isValidContainer(BlockEntity be) { return be instanceof ChestBlockEntity || be instanceof BarrelBlockEntity || be instanceof ShulkerBoxBlockEntity; }
+
+    private boolean isValidContainer(BlockEntity be) {
+        return be instanceof ChestBlockEntity || be instanceof BarrelBlockEntity || be instanceof ShulkerBoxBlockEntity;
+    }
+
     private boolean isDuplicateDoubleChest(BlockEntity be) {
         if (be instanceof ChestBlockEntity) {
             net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
-            if (state.hasProperty(ChestBlock.TYPE)) return state.getValue(ChestBlock.TYPE) == ChestType.LEFT;
+            if (state.hasProperty(ChestBlock.TYPE))
+                return state.getValue(ChestBlock.TYPE) == ChestType.LEFT;
         }
         return false;
     }
+
     private void sendQuickMovePacket(AbstractContainerMenu menu, int slotId) {
         // FIX: Use GameMode to handle the click.
-        // This automatically handles the packet creation, state IDs, and the new HashedStack logic.
+        // This automatically handles the packet creation, state IDs, and the new
+        // HashedStack logic.
         if (mc.gameMode != null) {
             mc.gameMode.handleInventoryMouseClick(
                     menu.containerId,
                     slotId,
                     0,
                     ClickType.QUICK_MOVE,
-                    mc.player
-            );
+                    mc.player);
         }
     }
+
     private void sendClosePacket() {
         if (mc.player != null && mc.player.containerMenu != mc.player.inventoryMenu) {
             mc.player.connection.send(new ServerboundContainerClosePacket(mc.player.containerMenu.containerId));
@@ -594,7 +662,8 @@ public class AutoStash extends Module {
      * Called from ModuleManager on tick to check if activeCache needs updating
      */
     public void forceRefreshActiveCache() {
-        if (mc.player == null) return;
+        if (mc.player == null)
+            return;
 
         BlockPos currentPos = mc.player.blockPosition();
 
@@ -651,7 +720,7 @@ public class AutoStash extends Module {
     }
 
     /**
-     * Được gọi từ Mixin khi người chơi click vào một block
+     * Called from Mixin when player clicks a block
      */
     public static void setLastInteractedBlock(BlockPos pos) {
         lastInteractedBlock = pos;
@@ -659,36 +728,39 @@ public class AutoStash extends Module {
     }
 
     /**
-     * Lấy vị trí block mà người chơi vừa click
+     * Get the block position the player just clicked
      */
     public static BlockPos getLastInteractedBlock() {
         return lastInteractedBlock;
     }
 
     /**
-     * Được gọi từ Mixin khi nhận packet mở container
-     * Nếu đây là manual open (không phải silent mode), cập nhật cache
+     * Called from Mixin when container open packet is received
+     * If manual open (not silent mode), update cache
      */
     public void onManualContainerOpen(int containerId, BlockPos containerPos) {
-        if (mc == null || mc.player == null || mc.level == null) return;
+        if (mc == null || mc.player == null || mc.level == null)
+            return;
 
-        // Nếu đây không phải là manual open, bỏ qua
-        if (!isManualOpen) return;
+        // Skip if not manual open
+        if (!isManualOpen)
+            return;
 
-        // Kiểm tra xem container này có hợp lệ không
+        // Check if container is valid
         BlockEntity be = mc.level.getBlockEntity(containerPos);
-        if (!isValidContainer(be)) return;
+        if (!isValidContainer(be))
+            return;
 
-        // Lưu vị trí để cập nhật cache sau khi container được mở hoàn toàn
-        // Chúng ta sẽ cập nhật trong onTick sau vài tick
+        // Save position to update cache after container fully opens
+        // We will update in onTick after a few ticks
         scheduleManualCacheUpdate(containerPos);
     }
 
     private void scheduleManualCacheUpdate(BlockPos pos) {
-        // Xử lý double chest: nếu là LEFT chest thì skip
+        // Handle double chest: skip if LEFT chest
         BlockEntity be = mc.level.getBlockEntity(pos);
         if (isDuplicateDoubleChest(be)) {
-            // Tìm RIGHT chest và dùng vị trí đó
+            // Find RIGHT chest and use its position
             if (be instanceof ChestBlockEntity) {
                 net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
                 if (state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) == ChestType.LEFT) {
@@ -699,27 +771,29 @@ public class AutoStash extends Module {
         }
 
         pendingManualUpdate = pos;
-        manualUpdateTimer = 5; // Chờ 5 ticks để container menu được đồng bộ
+        manualUpdateTimer = 5; // Wait 5 ticks for container menu to sync
     }
 
     /**
-     * Được gọi trong onTick để xử lý manual cache update
+     * Called in onTick to process manual cache update
      */
     private void processManualCacheUpdate() {
         tickManualCacheUpdate();
     }
 
     /**
-     * Static method để xử lý manual cache update, có thể gọi từ bất kỳ đâu
+     * Static method to handle manual cache update, measurable from anywhere
      */
     public static void tickManualCacheUpdate() {
-        if (pendingManualUpdate == null) return;
+        if (pendingManualUpdate == null)
+            return;
 
         Minecraft minecraft = Minecraft.getInstance();
         manualUpdateTimer--;
         if (manualUpdateTimer <= 0) {
-            // Kiểm tra xem container có đang mở không
-            if (minecraft.player != null && minecraft.player.containerMenu != null && minecraft.player.containerMenu != minecraft.player.inventoryMenu) {
+            // Check if container is currently open
+            if (minecraft.player != null && minecraft.player.containerMenu != null
+                    && minecraft.player.containerMenu != minecraft.player.inventoryMenu) {
                 updateManualContainerCache(pendingManualUpdate);
             }
             pendingManualUpdate = null;
@@ -728,11 +802,12 @@ public class AutoStash extends Module {
     }
 
     /**
-     * Cập nhật cache cho container được mở manually
+     * Update cache for manually opened container
      */
     private static void updateManualContainerCache(BlockPos pos) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || minecraft.level == null) return;
+        if (minecraft.player == null || minecraft.level == null)
+            return;
 
         AbstractContainerMenu menu = minecraft.player.containerMenu;
         int containerSlots = menu.slots.size() - 36;
@@ -761,11 +836,11 @@ public class AutoStash extends Module {
 
             cacheDirty = true;
 
-            // Lưu vào file
+            // Save to file
             Path cacheFile = CacheUtils.getCacheFilePath(minecraft, "autostash");
             CacheUtils.updateSpecificJsonObject(cacheFile, posKey, contents);
 
-            // Thông báo cho người chơi (tuỳ chọn)
+            // Notify player (optional)
             // sendMessage("§aCache updated for chest at " + posKey);
         }
     }

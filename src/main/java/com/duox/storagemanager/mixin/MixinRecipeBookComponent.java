@@ -21,6 +21,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * MixinRecipeBookComponent
+ * 
+ * Intercepts recipe clicks in the Recipe Book to automatically request
+ * missing ingredients from the StorageManager.
+ * 
+ * Uses robust reflection to access RecipeDisplay ingredients across
+ * different mappings and versions.
+ */
 @Mixin(RecipeBookComponent.class)
 public class MixinRecipeBookComponent {
 

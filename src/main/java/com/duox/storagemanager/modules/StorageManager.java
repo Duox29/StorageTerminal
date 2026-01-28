@@ -27,6 +27,13 @@ import java.lang.reflect.Type;
 import java.nio.file.Path;
 import java.util.*;
 
+/**
+ * StorageManager Module
+ * 
+ * Manages automated item retrieval from cached chests.
+ * Uses a state machine to plan pathways, open chests silently,
+ * withdraw required items, and return to the original container.
+ */
 public class StorageManager extends Module {
     // Request Queue: Item ID -> Quantity needed
     private final Map<String, Integer> requestQueue = new HashMap<>();
@@ -249,38 +256,56 @@ public class StorageManager extends Module {
         Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
 
         if (requestQueue.isEmpty()) {
-            currentState = State.IDLE;
-            this.setEnabled(false);
+            finishWhenQueueEmpty();
             return;
         }
-        // Clone request queue to track remaining needs
-        Map<String, Integer> remainingNeeds = new HashMap<>(requestQueue);
-        requestQueue.clear();
-        BlockPos playerPos = mc.player.blockPosition();
 
-        // Get all chests
-        List<String> sortedChests = new ArrayList<>(cache.keySet());
-
-        // CUSTOM SORT: Prioritize chests with LESS items (cleaning up junk) then
-        // Distance
-        sortedChests.sort(new ChestComparator(cache, remainingNeeds, playerPos));
+        Map<String, Integer> remainingNeeds = drainRequestQueue();
+        List<String> sortedChests = sortChestsByRelevance(cache, remainingNeeds, mc.player.blockPosition());
 
         for (String chestPosStr : sortedChests) {
             Map<String, Integer> contents = cache.get(chestPosStr);
+            if (contents == null || contents.isEmpty()) {
+                continue;
+            }
+
             BlockPos chestPos = CacheUtils.stringToPos(chestPosStr);
             processChestContents(contents, chestPos, remainingNeeds);
         }
 
+        finalizePlanning(remainingNeeds);
+    }
+
+    private Map<String, Integer> drainRequestQueue() {
+        Map<String, Integer> remainingNeeds = new HashMap<>(requestQueue);
+        requestQueue.clear();
+        return remainingNeeds;
+    }
+
+    private List<String> sortChestsByRelevance(Map<String, Map<String, Integer>> cache,
+            Map<String, Integer> remainingNeeds, BlockPos playerPos) {
+        List<String> sortedChests = new ArrayList<>(cache.keySet());
+        sortedChests.sort(new ChestComparator(cache, remainingNeeds, playerPos));
+        return sortedChests;
+    }
+
+    private void finalizePlanning(Map<String, Integer> remainingNeeds) {
         if (!remainingNeeds.isEmpty()) {
             sendMessage("Warning: Cannot find all items. Missing: " + remainingNeeds);
         }
 
         if (retrievalPlan.isEmpty()) {
             handleEmptyPlan();
-        } else {
-            retrievalIterator = retrievalPlan.entrySet().iterator();
-            moveToNextTarget();
+            return;
         }
+
+        retrievalIterator = retrievalPlan.entrySet().iterator();
+        moveToNextTarget();
+    }
+
+    private void finishWhenQueueEmpty() {
+        currentState = State.IDLE;
+        this.setEnabled(false);
     }
 
     private void processChestContents(Map<String, Integer> contents, BlockPos chestPos,
@@ -342,16 +367,15 @@ public class StorageManager extends Module {
         } else {
             sendMessage("Retrieval complete.");
             if (!requestQueue.isEmpty()) {
-                // Nếu có item mới trong hàng đợi, quay lại bước Lập Kế Hoạch ngay lập tức
+                // Restart planning if new requests exist
                 currentState = State.PLANNING;
             } else {
-                // Nếu không còn gì để làm, mới tắt module
+                // Finish if queue is empty
                 if (returnToContainerPos != null) {
                     openReturnContainer();
                     returnToContainerPos = null;
                 }
                 currentState = State.IDLE;
-                // this.setEnabled(false);
             }
         }
     }
@@ -409,30 +433,36 @@ public class StorageManager extends Module {
         }
 
         Map<String, Integer> itemsToTake = currentTargetEntry.getValue();
-        boolean actionTaken = false;
 
+        if (!processContainerSlots(menu, itemsToTake, containerSlots)) {
+            currentState = State.CLOSING_CHEST;
+        }
+    }
+
+    private boolean processContainerSlots(AbstractContainerMenu menu, Map<String, Integer> itemsToTake,
+            int containerSlots) {
         for (int i = 0; i < containerSlots; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
-            if (stack.isEmpty())
+            if (stack.isEmpty()) {
                 continue;
+            }
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-            if (!itemsToTake.containsKey(itemId))
+            if (!itemsToTake.containsKey(itemId)) {
                 continue;
+            }
 
             int needed = itemsToTake.get(itemId);
-            if (needed <= 0)
+            if (needed <= 0) {
                 continue;
+            }
 
             if (tryWithdrawItem(menu, i, stack, itemId, needed, containerSlots)) {
-                actionTaken = true;
-                break;
+                return true;
             }
         }
 
-        if (!actionTaken) {
-            currentState = State.CLOSING_CHEST;
-        }
+        return false;
     }
 
     private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId,
