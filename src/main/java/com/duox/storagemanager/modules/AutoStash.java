@@ -86,9 +86,10 @@ public class AutoStash extends Module {
     private static int manualUpdateTimer = 0;
 
     private List<BlockPos> scanQueue = new ArrayList<>();
-    private Map<BlockPos, List<Integer>> stashQueue = new HashMap<>();
+    private Map<BlockPos, List<Integer>> stashQueue = new LinkedHashMap<>();
     private Iterator<Map.Entry<BlockPos, List<Integer>>> stashIterator;
     private Map.Entry<BlockPos, List<Integer>> currentStashEntry;
+    private Set<BlockPos> processedChests = new HashSet<>();
 
     private enum State {
         IDLE,
@@ -141,6 +142,7 @@ public class AutoStash extends Module {
         stashQueue.clear();
         stashIterator = null;
         currentStashEntry = null;
+        processedChests.clear(); // [NEW] Reset tracking
     }
 
     public boolean isSilentMode() { return this.isEnabled(); }
@@ -259,39 +261,50 @@ public class AutoStash extends Module {
     }
 
     private void calculateStashPlan() {
-        stashQueue.clear();
+        // [ARCH NOTE] Re-planning: Each item finds its own best chest independently.
+        // We use LinkedHashMap to maintain the order of operations.
+        stashQueue = new LinkedHashMap<>();
+        if (mc.player == null) return;
+
         LocalPlayer player = mc.player;
         int startInv = includeHotbar.getValue() ? 0 : 9;
+
         for (int i = startInv; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
+
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+
+            // Find best chest, excluding those we've already processed this session
             BlockPos bestChest = findBestChest(itemId);
+
             if (bestChest != null) {
                 stashQueue.computeIfAbsent(bestChest, k -> new ArrayList<>()).add(i);
             }
         }
     }
-
     private BlockPos findBestChest(String itemId) {
         BlockPos bestPos = null;
         double maxScore = -1;
         BlockPos playerPos = mc.player.blockPosition();
         double rangeSq = Math.pow(range.getValue(), 2);
 
-        // Use activeCache instead of globalBuffer for performance
+        // Iterate active cache to find candidates
         for (Map.Entry<String, Map<String, Integer>> entry : activeCache.entrySet()) {
             String posStr = entry.getKey();
             Map<String, Integer> contents = entry.getValue();
             BlockPos pos = CacheUtils.stringToPos(posStr);
 
-            // Skip if out of range
+            // Filter: Range
             if (pos.distSqr(playerPos) > rangeSq) continue;
 
-            // Skip if doesn't contain item
+            // Filter: Already Processed (Prevents infinite loops on full chests)
+            if (processedChests.contains(pos)) continue;
+
+            // Filter: Must contain item
             if (!contents.containsKey(itemId)) continue;
 
-            // Calculate multi-factor score
+            // Scoring
             double score = calculateChestScore(pos, contents, itemId);
             if (score > maxScore) {
                 maxScore = score;
@@ -303,23 +316,19 @@ public class AutoStash extends Module {
 
     /**
      * Calculate a multi-factor score for chest selection
-     *
-     * @param pos Chest position
-     * @param contents Chest contents (itemId -> count)
-     * @param itemId Item to stash
-     * @return Score (higher = better fit)
+     * [ARCH NOTE] Includes critical fix for stackable space calculation
      */
     private double calculateChestScore(BlockPos pos, Map<String, Integer> contents, String itemId) {
         // Factor 1: Distance (closer = better)
         double distance = Math.sqrt(pos.distSqr(mc.player.blockPosition()));
         double distScore = 1.0 / (1.0 + distance / 10.0); // Normalize to [0, 1]
 
-        // Factor 2: Item Concentration (more of this item = better fit)
-        int itemCount = contents.get(itemId);
-        double itemScore = Math.min(1.0, itemCount / 64.0); // Cap at 1 stack
-
         // Get max stack size for this specific item
         int maxStackSize = getMaxStackSize(itemId);
+
+        // Factor 2: Item Concentration (more of this item = better fit)
+        int itemCount = contents.getOrDefault(itemId, 0);
+        double itemScore = Math.min(1.0, itemCount / 64.0); // Cap at 1 stack
 
         // Factor 3: Space Availability
         ChestSpaceInfo spaceInfo = calculateChestSpace(pos, contents);
@@ -327,32 +336,35 @@ public class AutoStash extends Module {
 
         if (spaceInfo.availableSlots == 0) {
             // Chest has no empty slots - check if THIS SPECIFIC ITEM can be stacked
-            // CRITICAL FIX: Check if the specific item we want to stash has stackable space
             if (contents.containsKey(itemId)) {
                 int currentItemCount = contents.get(itemId);
 
-                if (currentItemCount >= maxStackSize) {
-                    // This item's stack is already full, cannot add more
-                    return -1.0; // Exclude this chest from consideration
+                // Check if the last stack has space (Modulo arithmetic)
+                // e.g., if count is 65 and max is 64, we have 1 item in a stack of 64 -> Space exists.
+                int lastStackCount = currentItemCount % maxStackSize;
+
+                // If lastStackCount is 0, it means we have exact full stacks (e.g. 64, 128).
+                // Unless the item count is 0 (which shouldn't happen here), no space in existing stacks.
+                if (lastStackCount == 0 && currentItemCount > 0) {
+                    return -1.0; // Exclude: All stacks full, no empty slots
                 } else {
-                    // This item's stack has space, but penalize heavily since chest is full
+                    // Space exists in an existing stack, but chest is tight. Penalize score.
                     spaceScore = 0.3;
                 }
             } else {
-                // Chest doesn't contain this item and has no empty slots
-                // Cannot add new item type
-                return -1.0; // Exclude this chest from consideration
+                // Chest full and doesn't contain item -> Impossible to add
+                return -1.0;
             }
         } else {
-            // Normal case: calculate based on used capacity
+            // Normal case: Calculate based on overall used capacity
             int totalCapacity = spaceInfo.totalSlots * 64;
             int usedCapacity = contents.values().stream().mapToInt(Integer::intValue).sum();
             spaceScore = Math.max(0, 1.0 - (double) usedCapacity / totalCapacity);
         }
 
-        // Weighted Score
+        // Weighted Score Calculation
         double totalWeight = distanceWeight.getValue() + itemConcentrationWeight.getValue() + spaceWeight.getValue();
-        if (totalWeight == 0) totalWeight = 1.0; // Prevent division by zero
+        if (totalWeight == 0) totalWeight = 1.0;
 
         return (distScore * distanceWeight.getValue() +
                 itemScore * itemConcentrationWeight.getValue() +
@@ -476,12 +488,44 @@ public class AutoStash extends Module {
         }
     }
 
-    // [NEW] Hàm chờ đồng bộ
+    // [NEW] Logic handling synchronization and re-planning
     private void waitForUpdate() {
         waitTimer--;
         if (waitTimer <= 0) {
-            // Sau khi chờ xong, quét lại rương để lấy số liệu chuẩn xác nhất
+            // 1. Refresh data for the chest we just finished
             updateCurrentContainerToCache();
+
+            // 2. Mark as processed so we don't pick it again immediately
+            if (currentTarget != null) {
+                processedChests.add(currentTarget);
+            }
+
+            // 3. Dynamic Re-planning: Check if we still have items to stash
+            if (mc.player != null) {
+                boolean hasItemsToStash = false;
+                int startInv = includeHotbar.getValue() ? 0 : 9;
+
+                for (int i = startInv; i < 36; i++) {
+                    if (!mc.player.getInventory().getItem(i).isEmpty()) {
+                        hasItemsToStash = true;
+                        break;
+                    }
+                }
+
+                if (hasItemsToStash) {
+                    // Recalculate plan with updated cache and excluded chests
+                    calculateStashPlan();
+
+                    if (!stashQueue.isEmpty()) {
+                        stashIterator = stashQueue.entrySet().iterator();
+                        // Loop back to opening the next target
+                        currentState = State.CLOSING_AFTER_STASH;
+                        return;
+                    }
+                }
+            }
+
+            // Done
             currentState = State.CLOSING_AFTER_STASH;
         }
     }

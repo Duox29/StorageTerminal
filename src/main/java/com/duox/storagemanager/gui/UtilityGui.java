@@ -96,10 +96,12 @@ public class UtilityGui extends Screen {
             }
         }
     }
-
+    @Override
+    public void renderBackground(GuiGraphics p_283688_, int p_296369_, int p_296477_, float p_294317_) {
+    }
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        //this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
 
         // 1. Draw Background
         guiGraphics.fill(0, TOP_BAR_HEIGHT, SIDEBAR_WIDTH, this.height, 0xAA000000);

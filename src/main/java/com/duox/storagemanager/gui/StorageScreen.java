@@ -14,6 +14,8 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.neoforged.neoforge.client.event.ScreenEvent;
+import net.neoforged.neoforge.common.NeoForge;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -266,14 +268,16 @@ public class StorageScreen extends Screen {
     }
 
     // --- RENDER ---
-
+    @Override
+    public void renderBackground(GuiGraphics p_283688_, int p_296369_, int p_296477_, float p_294317_) {
+    }
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         if (AutoStash.cacheDirty) {
             refreshItemList();
             AutoStash.cacheDirty = false; // Đã xử lý xong
         }
-        this.renderBackground(graphics, mouseX, mouseY, partialTick);
+        //this.renderBackground(graphics, mouseX, mouseY, partialTick);
 
         // 1. Main GUI Panel
         graphics.fill(guiLeft, guiTop, guiLeft + GUI_WIDTH, guiTop + GUI_HEIGHT, COLOR_BG_MAIN);
