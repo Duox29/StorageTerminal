@@ -39,6 +39,18 @@ public abstract class MixinContainerScreen extends Screen {
             cir.setReturnValue(true);
         }
     }
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        // 1. Logic Custom của bạn (tương tự phần @At HEAD)
+        // Kiểm tra xem storagePanel có xử lý sự kiện này không
+        if (this.storagePanel != null && this.storagePanel.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
+            return true; // Tương đương cir.setReturnValue(true) - chặn sự kiện lan tiếp
+        }
+
+        // 2. Gọi logic của class cha (Screen)
+        // Điều này QUAN TRỌNG để giữ các tính năng mặc định khác của GUI (nếu có) vẫn hoạt động
+        return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
 
     @Override
     public void removed() {
