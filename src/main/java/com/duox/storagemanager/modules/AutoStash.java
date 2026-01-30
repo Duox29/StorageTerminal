@@ -227,8 +227,8 @@ public class AutoStash extends Module {
 
     // --- Rebuild Cache Logic ---
     private void startRebuildCache() {
-        globalBuffer.clear();
-        activeCache.clear();
+        //globalBuffer.clear();
+        //activeCache.clear();
         cacheDirty = true;
         scanQueue.clear();
         BlockPos playerPos = mc.player.blockPosition();
@@ -252,8 +252,8 @@ public class AutoStash extends Module {
 
     private void processScanQueue() {
         if (scanQueue.isEmpty()) {
-            CacheDatabase db = CacheDatabase.getInstance(mc);
-            db.replaceAll(globalBuffer);
+            //CacheDatabase db = CacheDatabase.getInstance(mc);
+            //db.replaceAll(globalBuffer);
             rebuildCache.setValue(false);
 
             // After rebuild, refresh active cache based on current position
