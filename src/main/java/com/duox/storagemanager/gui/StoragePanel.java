@@ -595,6 +595,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     private void onSearchChanged(String text) {
         filterItems();
+        scrollPosition = 0.0f;
     }
 
     private void filterItems() {
@@ -605,8 +606,13 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             filteredItems = allItems.stream()
                     .filter(e -> e.stack.getHoverName().getString().toLowerCase().contains(query))
                     .collect(Collectors.toList());
-        scrollPosition = 0.0f;
-    }
+
+        int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+        if (totalRows <= GRID_ROWS) {
+            scrollPosition = 0.0f;
+        } else {
+            scrollPosition = Mth.clamp(scrollPosition, 0.0f, 1.0f);
+        }    }
 
     private String shortenedCount(int count) {
         if (count >= 1000000)

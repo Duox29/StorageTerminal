@@ -564,11 +564,21 @@ public class StorageScreen extends Screen {
                             || e.id.contains(query))
                     .collect(Collectors.toList());
         }
-        scrollPosition = 0.0f;
+        // [FIX] ADDED: Safety check.
+        // If the new list is smaller than the old one, clamp the scroll position
+        // so we don't end up looking at empty space.
+        int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
+        if (totalRows <= GRID_ROWS) {
+            scrollPosition = 0.0f;
+        } else {
+            scrollPosition = Mth.clamp(scrollPosition, 0.0f, 1.0f);
+        }
     }
 
     private void onSearchChanged(String text) {
+
         filterItems();
+        scrollPosition = 0.0f;
     }
 
     private String shortenedCount(int count) {
