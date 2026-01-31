@@ -4,6 +4,7 @@ import com.duox.storagemanager.gui.widgets.SlotScrollHandler;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.utils.CacheDatabase;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -240,13 +241,13 @@ public class StorageScreen extends Screen {
         // 3. Nút Build Cache (Nằm bên trái nút Clear)
         int buildBtnX = clearBtnX - sideBtnWidth - buttonSpacing;
         this.addRenderableWidget(Button.builder(Component.literal("Build"), b -> {
-            com.duox.storagemanager.modules.AutoStash stash = com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(com.duox.storagemanager.modules.AutoStash.class);
+            AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             if (stash != null) {
                 // Tìm và bật setting Rebuild Cache
                 stash.getSettings().stream()
                         .filter(s -> s.getName().equalsIgnoreCase("Rebuild Cache Next Run"))
                         .findFirst()
-                        .ifPresent(s -> ((com.duox.storagemanager.system.settings.BooleanSetting) s).setValue(true));
+                        .ifPresent(s -> ((BooleanSetting) s).setValue(true));
 
                 stash.setEnabled(true);
                 if (this.minecraft.player != null) {

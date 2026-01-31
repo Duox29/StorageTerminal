@@ -6,6 +6,7 @@ import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.CacheDatabase;
 import com.duox.storagemanager.utils.CacheUtils;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -124,8 +125,7 @@ public class AutoStash extends Module {
     public AutoStash() {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.", Category.UTILITY);
 
-        this.getKeyMapping().setKey(
-                com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_B));
+        this.getKeyMapping().setKey(InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_B));
         this.addSetting(range);
         this.addSetting(includeHotbar);
         this.addSetting(itemsPerTick);
@@ -325,62 +325,125 @@ public class AutoStash extends Module {
     }
 
     private void calculateStashPlan() {
-        // Dynamic Re-planning: Mỗi item chỉ tìm 1 chest tốt nhất
-        // Sau khi deposit xong, sẽ gọi lại hàm này để tính lại plan
+        sendMessage("§e[DEBUG] === Starting calculateStashPlan ===");
         stashQueue = new LinkedHashMap<>();
-        if (mc.player == null)
+        if (mc.player == null) {
+            sendMessage("§c[DEBUG] Player is null!");
             return;
+        }
 
         LocalPlayer player = mc.player;
         int startInv = includeHotbar.getValue() ? 0 : 9;
+        sendMessage("§e[DEBUG] Scanning inventory from slot " + startInv + " to 35");
 
         for (int i = startInv; i < 36; i++) {
             ItemStack stack = player.getInventory().getItem(i);
-            if (stack.isEmpty())
-                continue;
+            if (stack.isEmpty()) continue;
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            int count = stack.getCount();
 
-            // Tìm chest TỐT NHẤT cho item này (dựa vào score)
+            sendMessage("§b[DEBUG] Slot " + i + ": " + itemId + " x" + count);
+
+            // Kiểm tra active cache trước khi gọi findBestChest
+            sendMessage("§7[DEBUG]   ActiveCache size: " + activeCache.size());
+            boolean inAnyCache = false;
+            for (Map.Entry<String, Map<String, Integer>> entry : activeCache.entrySet()) {
+                if (entry.getValue().containsKey(itemId)) {
+                    inAnyCache = true;
+                    sendMessage("§7[DEBUG]   Found in cache at " + entry.getKey() + ": " + entry.getValue().get(itemId));
+                    break;
+                }
+            }
+            if (!inAnyCache) {
+                sendMessage("§c[DEBUG]   Item NOT found in any active cache!");
+            }
+
             BlockPos bestChest = findBestChest(itemId);
 
             if (bestChest != null) {
+                sendMessage("§a[DEBUG]   -> Assigned to chest at " + bestChest);
                 stashQueue.computeIfAbsent(bestChest, k -> new ArrayList<>()).add(i);
+            } else {
+                sendMessage("§c[DEBUG]   -> findBestChest returned NULL!");
             }
         }
-    }
 
+        sendMessage("§e[DEBUG] === Stash Plan Summary ===");
+        sendMessage("§e[DEBUG] Total chests in plan: " + stashQueue.size());
+    }
     private BlockPos findBestChest(String itemId) {
+        sendMessage("§6[DEBUG] findBestChest called for: " + itemId);
         BlockPos bestPos = null;
         double maxScore = -1;
         BlockPos playerPos = mc.player.blockPosition();
         double rangeSq = Math.pow(range.getValue(), 2);
 
-        // Use activeCache instead of globalBuffer for performance
+        sendMessage("§6[DEBUG] Player pos: " + playerPos + ", Range: " + range.getValue() + " (sq: " + rangeSq + ")");
+        sendMessage("§6[DEBUG] Checking " + activeCache.size() + " chests in active cache");
+
+        int checked = 0;
+        int skippedProcessed = 0;
+        int skippedRange = 0;
+        int skippedNoItem = 0;
+        int skippedNegativeScore = 0;
+
         for (Map.Entry<String, Map<String, Integer>> entry : activeCache.entrySet()) {
             String posStr = entry.getKey();
             Map<String, Integer> contents = entry.getValue();
             BlockPos pos = CacheUtils.stringToPos(posStr);
+            checked++;
+
+            // Log mỗi 5 chest để tránh spam
+            if (checked % 5 == 0) {
+                sendMessage("§7[DEBUG]   Processed " + checked + "/" + activeCache.size() + " chests...");
+            }
 
             // Skip if out of range
-            if (pos.distSqr(playerPos) > rangeSq)
+            double distSq = pos.distSqr(playerPos);
+            if (distSq > rangeSq) {
+                skippedRange++;
                 continue;
+            }
 
             // Skip if already processed in this session
-            if (processedChests.contains(pos))
+            if (processedChests.contains(pos)) {
+                skippedProcessed++;
+                sendMessage("§7[DEBUG]   Chest " + posStr + " already processed this session");
                 continue;
+            }
 
             // Skip if doesn't contain item
-            if (!contents.containsKey(itemId))
+            if (!contents.containsKey(itemId)) {
+                skippedNoItem++;
                 continue;
+            }
+
+            sendMessage("§a[DEBUG]   Chest " + posStr + " contains " + itemId + " (count: " + contents.get(itemId) + ")");
+            sendMessage("§a[DEBUG]   Distance: " + Math.sqrt(distSq));
 
             // Calculate multi-factor score
             double score = calculateChestScore(pos, contents, itemId);
+            sendMessage("§a[DEBUG]   Score: " + score);
+
             if (score > maxScore) {
                 maxScore = score;
                 bestPos = pos;
+                sendMessage("§a[DEBUG]   -> New best chest!");
+            } else if (score < 0) {
+                skippedNegativeScore++;
+                sendMessage("§c[DEBUG]   -> Negative score, excluded");
             }
         }
+
+        sendMessage("§6[DEBUG] findBestChest Summary:");
+        sendMessage("§6[DEBUG]   Total checked: " + checked);
+        sendMessage("§6[DEBUG]   Skipped (range): " + skippedRange);
+        sendMessage("§6[DEBUG]   Skipped (processed): " + skippedProcessed);
+        sendMessage("§6[DEBUG]   Skipped (no item): " + skippedNoItem);
+        sendMessage("§6[DEBUG]   Skipped (negative score): " + skippedNegativeScore);
+        sendMessage("§6[DEBUG]   Best pos: " + bestPos + " (score: " + maxScore + ")");
+
         return bestPos;
     }
 
@@ -395,38 +458,49 @@ public class AutoStash extends Module {
     private double calculateChestScore(BlockPos pos, Map<String, Integer> contents, String itemId) {
         // Factor 1: Distance (closer = better)
         double distance = Math.sqrt(pos.distSqr(mc.player.blockPosition()));
-        double distScore = 1.0 / (1.0 + distance / 10.0); // Normalize to [0, 1]
+        double distScore = 1.0 / (1.0 + distance / 10.0);
 
         // Get max stack size for this specific item
         int maxStackSize = getMaxStackSize(itemId);
+        sendMessage("§8[DEBUG-SCORE] " + pos + " maxStackSize for " + itemId + ": " + maxStackSize);
 
         // Factor 2: Item Concentration (more of this item = better fit)
         int itemCount = contents.getOrDefault(itemId, 0);
-        double itemScore = Math.min(1.0, itemCount / 64.0); // Cap at 1 stack
+        double itemScore = Math.min(1.0, itemCount / 64.0);
 
         // Factor 3: Space Availability
         ChestSpaceInfo spaceInfo = calculateChestSpace(pos, contents);
+        sendMessage("§8[DEBUG-SCORE] " + pos + " spaceInfo: total=" + spaceInfo.totalSlots
+                + ", used=" + spaceInfo.usedSlots + ", available=" + spaceInfo.availableSlots
+                + ", hasStackableSpace=" + spaceInfo.hasStackableSpace);
+
         double spaceScore;
 
         if (spaceInfo.availableSlots == 0) {
+            sendMessage("§8[DEBUG-SCORE] " + pos + " No empty slots available");
             // Chest has no empty slots - check if THIS SPECIFIC ITEM can be stacked
-            // CRITICAL FIX: Check if the specific item we want to stash has stackable space
             if (contents.containsKey(itemId)) {
                 int currentItemCount = contents.get(itemId);
+                sendMessage("§8[DEBUG-SCORE] " + pos + " Current item count in chest: " + currentItemCount);
+                sendMessage("§8[DEBUG-SCORE] " + pos + " Calculating lastStackCount = " + currentItemCount + " % " + maxStackSize);
 
                 // CRITICAL FIX: currentItemCount is TOTAL count, not per-slot
                 // Check if the last stack has space
                 int lastStackCount = currentItemCount % maxStackSize;
+                sendMessage("§8[DEBUG-SCORE] " + pos + " lastStackCount: " + lastStackCount);
+
                 if (lastStackCount == 0) {
                     // All stacks are full (e.g., 192 = 3 * 64)
+                    sendMessage("§c[DEBUG-SCORE] " + pos + " All stacks FULL (lastStackCount=0), returning -1.0");
                     return -1.0; // Exclude this chest from consideration
                 } else {
                     // Last stack has space (e.g., 130 = 2*64 + 2, last stack has 62 free)
                     spaceScore = 0.3;
+                    sendMessage("§a[DEBUG-SCORE] " + pos + " Last stack has space, spaceScore=0.3");
                 }
             } else {
                 // Chest doesn't contain this item and has no empty slots
-                // Cannot add new item type
+                sendMessage("§c[DEBUG-SCORE] " + pos + " Item not in chest and no empty slots, returning -1.0");
                 return -1.0; // Exclude this chest from consideration
             }
         } else {
@@ -434,18 +508,24 @@ public class AutoStash extends Module {
             int totalCapacity = spaceInfo.totalSlots * 64;
             int usedCapacity = contents.values().stream().mapToInt(Integer::intValue).sum();
             spaceScore = Math.max(0, 1.0 - (double) usedCapacity / totalCapacity);
+            sendMessage("§8[DEBUG-SCORE] " + pos + " Normal calculation: usedCapacity=" + usedCapacity
+                    + ", totalCapacity=" + totalCapacity + ", spaceScore=" + spaceScore);
         }
 
         // Weighted Score
         double totalWeight = distanceWeight.getValue() + itemConcentrationWeight.getValue() + spaceWeight.getValue();
-        if (totalWeight == 0)
-            totalWeight = 1.0; // Prevent division by zero
+        if (totalWeight == 0) totalWeight = 1.0;
 
-        return (distScore * distanceWeight.getValue() +
+        double finalScore = (distScore * distanceWeight.getValue() +
                 itemScore * itemConcentrationWeight.getValue() +
                 spaceScore * spaceWeight.getValue()) / totalWeight;
-    }
 
+        sendMessage("§8[DEBUG-SCORE] " + pos + " distScore=" + distScore
+                + ", itemScore=" + itemScore + ", spaceScore=" + spaceScore
+                + ", final=" + finalScore);
+
+        return finalScore;
+    }
     /**
      * Get maximum stack size for an item
      */
@@ -467,39 +547,52 @@ public class AutoStash extends Module {
     /**
      * Calculate chest space information
      */
+    /**
+     * Calculate chest space information
+     */
+    /**
+     * Refined calculation of chest space based on actual item counts.
+     */
     private ChestSpaceInfo calculateChestSpace(BlockPos pos, Map<String, Integer> contents) {
         BlockEntity be = mc.level.getBlockEntity(pos);
         int totalSlots = getChestCapacity(be);
 
-        // Calculate used slots (counting unique items)
-        int usedSlots = contents.size();
-        int availableSlots = Math.max(0, totalSlots - usedSlots);
-
-        // Check if any existing stack has space for more items
+        int occupiedSlots = 0;
         boolean hasStackableSpace = false;
-        for (int count : contents.values()) {
-            if (count < 64) { // Stack not full
+
+        for (Map.Entry<String, Integer> entry : contents.entrySet()) {
+            String itemId = entry.getKey();
+            int totalCount = entry.getValue();
+            int maxStack = getMaxStackSize(itemId);
+
+            // Calculate physical slots occupied: ceil(totalCount / maxStack)
+            // Formula: (numerator + denominator - 1) / denominator
+            int slotsTaken = (totalCount + maxStack - 1) / maxStack;
+            occupiedSlots += slotsTaken;
+
+            // Check if the last stack has space
+            if (totalCount % maxStack != 0) {
                 hasStackableSpace = true;
-                break;
             }
         }
 
-        return new ChestSpaceInfo(totalSlots, usedSlots, availableSlots, hasStackableSpace);
-    }
+        // Clamp available slots to 0 to prevent negatives
+        int availableSlots = Math.max(0, totalSlots - occupiedSlots);
 
-    /**
+        return new ChestSpaceInfo(totalSlots, occupiedSlots, availableSlots, hasStackableSpace);
+    }    /**
      * Get chest capacity (number of slots)
      */
     private int getChestCapacity(BlockEntity be) {
         if (be instanceof ChestBlockEntity) {
-            // Check if double chest
             net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
             if (state.hasProperty(ChestBlock.TYPE)) {
                 ChestType type = state.getValue(ChestBlock.TYPE);
-                if (type == ChestType.SINGLE)
-                    return 27;
-                // For double chests, we only scan RIGHT half, which has 27 slots
-                return 27;
+                // If it's NOT a single chest, it's a Double Chest (Left or Right).
+                // Minecraft combines them into one inventory view of 54 slots.
+                if (type != ChestType.SINGLE) {
+                    return 54;
+                }
             }
             return 27;
         } else if (be instanceof BarrelBlockEntity) {
@@ -509,7 +602,6 @@ public class AutoStash extends Module {
         }
         return 27; // Default
     }
-
     /**
      * Helper class to store chest space information
      */
