@@ -17,6 +17,29 @@ import java.util.Map;
  */
 public class CacheDatabase {
     private static final Logger LOGGER = LogManager.getLogger();
+    private static final int BATCH_SIZE = 1000; // Prevent memory issues with huge datasets
+
+    // SQL Constants - avoid string reconstruction on every call
+    private static final String PRAGMA_WAL = "PRAGMA journal_mode=WAL;";
+    private static final String PRAGMA_SYNC = "PRAGMA synchronous=NORMAL;";
+    private static final String SQL_CREATE_TABLE = """
+            CREATE TABLE IF NOT EXISTS chest_cache (
+                server_id TEXT NOT NULL,
+                pos TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                count INTEGER NOT NULL,
+                PRIMARY KEY (server_id, pos, item_id)
+            );
+            """;
+    private static final String SQL_SELECT_ALL =
+            "SELECT pos, item_id, count FROM chest_cache WHERE server_id = ?";
+    private static final String SQL_DELETE_BY_POS =
+            "DELETE FROM chest_cache WHERE server_id = ? AND pos = ?";
+    private static final String SQL_INSERT =
+            "INSERT INTO chest_cache (server_id, pos, item_id, count) VALUES (?, ?, ?, ?)";
+    private static final String SQL_DELETE_BY_SERVER =
+            "DELETE FROM chest_cache WHERE server_id = ?";
+
     private static CacheDatabase instance;
 
     private final Path dbPath;
@@ -30,8 +53,8 @@ public class CacheDatabase {
     }
 
     /**
-    * Get singleton per server/world. Switches DB when serverId changes.
-    */
+     * Get singleton per server/world. Switches DB when serverId changes.
+     */
     public static synchronized CacheDatabase getInstance(Minecraft mc) {
         String safeServerId = CacheUtils.getSafeServerIdentifier(mc);
         if (instance == null || !instance.serverId.equals(safeServerId)) {
@@ -53,39 +76,38 @@ public class CacheDatabase {
             connection.setAutoCommit(true);
 
             try (Statement stmt = connection.createStatement()) {
-                stmt.execute("PRAGMA journal_mode=WAL;");
-                stmt.execute("PRAGMA synchronous=NORMAL;");
+                stmt.execute(PRAGMA_WAL);
+                stmt.execute(PRAGMA_SYNC);
             }
 
             ensureSchema();
         } catch (SQLException | IOException e) {
             LOGGER.error("CacheDatabase: failed to initialize at {}", dbPath, e);
+            close(); // Ensure cleanup on partial failure
             connection = null;
         }
     }
 
     private void ensureSchema() throws SQLException {
-        if (connection == null) return;
-        String sql = """
-                CREATE TABLE IF NOT EXISTS chest_cache (
-                    server_id TEXT NOT NULL,
-                    pos TEXT NOT NULL,
-                    item_id TEXT NOT NULL,
-                    count INTEGER NOT NULL,
-                    PRIMARY KEY (server_id, pos, item_id)
-                );
-                """;
+        if (!isConnected()) return;
         try (Statement stmt = connection.createStatement()) {
-            stmt.execute(sql);
+            stmt.execute(SQL_CREATE_TABLE);
+        }
+    }
+
+    private boolean isConnected() {
+        try {
+            return connection != null && !connection.isClosed();
+        } catch (SQLException e) {
+            return false;
         }
     }
 
     public synchronized Map<String, Map<String, Integer>> loadAll() {
         Map<String, Map<String, Integer>> result = new HashMap<>();
-        if (connection == null) return result;
+        if (!isConnected()) return result;
 
-        String sql = "SELECT pos, item_id, count FROM chest_cache WHERE server_id = ?";
-        try (PreparedStatement ps = connection.prepareStatement(sql)) {
+        try (PreparedStatement ps = connection.prepareStatement(SQL_SELECT_ALL)) {
             ps.setString(1, serverId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
@@ -103,71 +125,102 @@ public class CacheDatabase {
     }
 
     public synchronized void upsertChest(String pos, Map<String, Integer> contents) {
-        if (connection == null) return;
-        String deleteSql = "DELETE FROM chest_cache WHERE server_id = ? AND pos = ?";
-        String insertSql = "INSERT INTO chest_cache (server_id, pos, item_id, count) VALUES (?, ?, ?, ?)";
+        if (!isConnected()) return;
 
-        try (PreparedStatement del = connection.prepareStatement(deleteSql);
-             PreparedStatement ins = connection.prepareStatement(insertSql)) {
+        boolean autoCommitOriginal = false;
+        try {
+            autoCommitOriginal = connection.getAutoCommit();
             connection.setAutoCommit(false);
 
-            del.setString(1, serverId);
-            del.setString(2, pos);
-            del.executeUpdate();
-
-            for (Map.Entry<String, Integer> entry : contents.entrySet()) {
-                ins.setString(1, serverId);
-                ins.setString(2, pos);
-                ins.setString(3, entry.getKey());
-                ins.setInt(4, entry.getValue());
-                ins.addBatch();
+            // Delete existing entries for this chest
+            try (PreparedStatement del = connection.prepareStatement(SQL_DELETE_BY_POS)) {
+                del.setString(1, serverId);
+                del.setString(2, pos);
+                del.executeUpdate();
             }
-            ins.executeBatch();
+
+            // Insert new contents in batches
+            if (!contents.isEmpty()) {
+                try (PreparedStatement ins = connection.prepareStatement(SQL_INSERT)) {
+                    int batchCount = 0;
+                    for (Map.Entry<String, Integer> entry : contents.entrySet()) {
+                        ins.setString(1, serverId);
+                        ins.setString(2, pos);
+                        ins.setString(3, entry.getKey());
+                        ins.setInt(4, entry.getValue());
+                        ins.addBatch();
+
+                        if (++batchCount % BATCH_SIZE == 0) {
+                            ins.executeBatch();
+                        }
+                    }
+                    if (batchCount % BATCH_SIZE != 0) {
+                        ins.executeBatch();
+                    }
+                }
+            }
+
             connection.commit();
         } catch (SQLException e) {
-            try { connection.rollback(); } catch (SQLException ignored) {}
+            rollback();
             LOGGER.error("CacheDatabase: failed to upsert chest {}", pos, e);
         } finally {
-            try { if (connection != null) connection.setAutoCommit(true); } catch (SQLException ignored) {}
+            restoreAutoCommit(autoCommitOriginal);
         }
     }
 
     public synchronized void replaceAll(Map<String, Map<String, Integer>> data) {
-        if (connection == null) return;
-        String deleteSql = "DELETE FROM chest_cache WHERE server_id = ?";
-        String insertSql = "INSERT INTO chest_cache (server_id, pos, item_id, count) VALUES (?, ?, ?, ?)";
+        if (!isConnected()) return;
+        if (data.isEmpty()) {
+            clearServer();
+            return;
+        }
 
-        try (PreparedStatement del = connection.prepareStatement(deleteSql);
-             PreparedStatement ins = connection.prepareStatement(insertSql)) {
+        boolean autoCommitOriginal = false;
+        try {
+            autoCommitOriginal = connection.getAutoCommit();
             connection.setAutoCommit(false);
 
-            del.setString(1, serverId);
-            del.executeUpdate();
+            // Clear all existing entries for this server
+            try (PreparedStatement del = connection.prepareStatement(SQL_DELETE_BY_SERVER)) {
+                del.setString(1, serverId);
+                del.executeUpdate();
+            }
 
-            for (Map.Entry<String, Map<String, Integer>> chest : data.entrySet()) {
-                String pos = chest.getKey();
-                for (Map.Entry<String, Integer> item : chest.getValue().entrySet()) {
-                    ins.setString(1, serverId);
-                    ins.setString(2, pos);
-                    ins.setString(3, item.getKey());
-                    ins.setInt(4, item.getValue());
-                    ins.addBatch();
+            // Insert new data with batch size control to prevent OOM
+            try (PreparedStatement ins = connection.prepareStatement(SQL_INSERT)) {
+                int batchCount = 0;
+                for (Map.Entry<String, Map<String, Integer>> chest : data.entrySet()) {
+                    String pos = chest.getKey();
+                    for (Map.Entry<String, Integer> item : chest.getValue().entrySet()) {
+                        ins.setString(1, serverId);
+                        ins.setString(2, pos);
+                        ins.setString(3, item.getKey());
+                        ins.setInt(4, item.getValue());
+                        ins.addBatch();
+
+                        if (++batchCount % BATCH_SIZE == 0) {
+                            ins.executeBatch();
+                        }
+                    }
+                }
+                if (batchCount % BATCH_SIZE != 0) {
+                    ins.executeBatch();
                 }
             }
-            ins.executeBatch();
+
             connection.commit();
         } catch (SQLException e) {
-            try { connection.rollback(); } catch (SQLException ignored) {}
+            rollback();
             LOGGER.error("CacheDatabase: failed to replace all cache entries", e);
         } finally {
-            try { if (connection != null) connection.setAutoCommit(true); } catch (SQLException ignored) {}
+            restoreAutoCommit(autoCommitOriginal);
         }
     }
 
     public synchronized void clearServer() {
-        if (connection == null) return;
-        String deleteSql = "DELETE FROM chest_cache WHERE server_id = ?";
-        try (PreparedStatement del = connection.prepareStatement(deleteSql)) {
+        if (!isConnected()) return;
+        try (PreparedStatement del = connection.prepareStatement(SQL_DELETE_BY_SERVER)) {
             del.setString(1, serverId);
             del.executeUpdate();
         } catch (SQLException e) {
@@ -178,11 +231,33 @@ public class CacheDatabase {
     public synchronized void close() {
         if (connection != null) {
             try {
-                connection.close();
+                if (!connection.isClosed()) {
+                    connection.close();
+                }
             } catch (SQLException e) {
                 LOGGER.warn("CacheDatabase: failed to close connection", e);
             }
             connection = null;
+        }
+    }
+
+    private void rollback() {
+        try {
+            if (connection != null && !connection.getAutoCommit()) {
+                connection.rollback();
+            }
+        } catch (SQLException e) {
+            LOGGER.error("CacheDatabase: rollback failed", e);
+        }
+    }
+
+    private void restoreAutoCommit(boolean original) {
+        try {
+            if (isConnected()) {
+                connection.setAutoCommit(original);
+            }
+        } catch (SQLException e) {
+            LOGGER.warn("CacheDatabase: failed to restore auto-commit", e);
         }
     }
 }
