@@ -5,8 +5,10 @@ import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.client.input.MouseButtonEvent; // IMPORT ADDED
+import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -35,22 +37,37 @@ public abstract class MixinContainerScreen extends Screen {
         }
     }
 
-    // FIX: Updated signature to match Minecraft 1.21+
-    // Screen.mouseDragged(MouseButtonEvent, double, double)
-    @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
-    private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY,
-            CallbackInfoReturnable<Boolean> cir) {
-        // Pass the event object directly to storagePanel
-        if (storagePanel != null && storagePanel.mouseDragged(event, dragX, dragY)) {
-            cir.setReturnValue(true);
-        }
-    }
+//    // FIX: Updated signature to match Minecraft 1.21+
+//    // Screen.mouseDragged(MouseButtonEvent, double, double)
+//    @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
+//    private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY,
+//            CallbackInfoReturnable<Boolean> cir) {
+//        // Pass the event object directly to storagePanel
+//        if (storagePanel != null && storagePanel.mouseDragged(event, dragX, dragY)) {
+//            cir.setReturnValue(true);
+//        }
+//    }
 
     // Inject mouseScrolled to forward scroll events to StoragePanel
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
     private void onMouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY,
             CallbackInfoReturnable<Boolean> cir) {
         if (storagePanel != null && storagePanel.mouseScrolled(mouseX, mouseY, scrollX, scrollY)) {
+            cir.setReturnValue(true);
+        }
+    }
+    @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
+    private void onKeyPressed(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (storagePanel != null && storagePanel.isSearchFocused()) {
+            // Vẫn cho phép phím ESCAPE để thoát GUI bất cứ lúc nào
+            if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+                return;
+            }
+
+            // Ép gửi event cho StoragePanel xử lý (Backspace, Mũi tên trái/phải, v.v.)
+            storagePanel.keyPressed(event);
+
+            // Hủy event để nó không lan tới logic đóng Inventory của ContainerScreen
             cir.setReturnValue(true);
         }
     }

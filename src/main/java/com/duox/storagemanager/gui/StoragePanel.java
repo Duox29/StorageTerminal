@@ -621,4 +621,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return String.format("%.1fk", count / 1000.0);
         return String.valueOf(count);
     }
+    public boolean isSearchFocused() {
+        return this.searchBox != null && this.searchBox.isFocused();
+    }
 }
