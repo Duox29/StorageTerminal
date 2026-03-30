@@ -52,7 +52,8 @@ public class MixinRecipeBookComponent {
                 var entry = known.get(id);
                 if (entry != null) {
                     RecipeDisplay display = entry.display();
-                    requestIngredientsFromDisplay(display, sm);
+                    // Truyền thêm biến placeAll (Shift-Click) vào hàm
+                    requestIngredientsFromDisplay(display, sm, placeAll);
                 }
             }
 
@@ -62,8 +63,8 @@ public class MixinRecipeBookComponent {
     }
 
     @SuppressWarnings("unchecked")
-    private void requestIngredientsFromDisplay(RecipeDisplay display, StorageManager sm) {
-        Map<String, Integer> needed = new HashMap<>();
+    private void requestIngredientsFromDisplay(RecipeDisplay display, StorageManager sm, boolean placeAll) {
+        Map<String, Integer> baseCost = new HashMap<>();
 
         try {
             List<SlotDisplay> ingredientSlots = null;
@@ -100,7 +101,7 @@ public class MixinRecipeBookComponent {
 
             if (ingredientSlots == null) return;
 
-            // 1. Phân tích các nguyên liệu cần thiết (Lấy loại có nhiều nhất trong kho nếu dùng Tag)
+            // 1. TÍNH BASE COST: Phân tích các nguyên liệu cần thiết cho ĐÚNG 1 LẦN CRAFT
             for (SlotDisplay slotDisplay : ingredientSlots) {
                 List<ItemStack> possibleItems = resolveSlotDisplay(slotDisplay);
 
@@ -108,7 +109,7 @@ public class MixinRecipeBookComponent {
                     String bestItemId = null;
                     int maxAvailable = -1;
 
-                    // Quét các item hợp lệ, ưu tiên chọn item mà chúng ta đang có NHIỀU NHẤT trong kho
+                    // Ưu tiên chọn item mà chúng ta đang có NHIỀU NHẤT trong kho
                     for (ItemStack stack : possibleItems) {
                         if (stack.isEmpty()) continue;
                         String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
@@ -119,71 +120,116 @@ public class MixinRecipeBookComponent {
                         }
                     }
 
-                    // Nếu không có món nào trong kho, fallback về item đầu tiên của recipe
+                    // Fallback
                     if (bestItemId == null || maxAvailable <= 0) {
                         bestItemId = BuiltInRegistries.ITEM.getKey(possibleItems.get(0).getItem()).toString();
                     }
 
-                    if (bestItemId != null) {
-                        needed.put(bestItemId, needed.getOrDefault(bestItemId, 0) + 1);
-                    }
+                    baseCost.put(bestItemId, baseCost.getOrDefault(bestItemId, 0) + 1);
                 }
             }
 
-            // 2. Trừ đi số lượng đã có sẵn trong túi đồ của người chơi
+            if (baseCost.isEmpty()) return;
+
+            // 2. Tính số lượng item CÓ SẴN trong túi đồ của người chơi
+            Map<String, Integer> playerInv = new HashMap<>();
             Inventory inventory = minecraft.player.getInventory();
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);
                 if (stack.isEmpty()) continue;
 
                 String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                if (needed.containsKey(id)) {
-                    int count = needed.get(id);
-                    int inInv = stack.getCount();
-                    if (inInv >= count) {
-                        needed.remove(id);
-                    } else {
-                        needed.put(id, count - inInv);
-                    }
+                if (baseCost.containsKey(id)) {
+                    playerInv.put(id, playerInv.getOrDefault(id, 0) + stack.getCount());
                 }
             }
 
-            // 3. KIỂM TRA ĐỦ ĐIỀU KIỆN (ALL OR NOTHING)
-            if (!needed.isEmpty()) {
-                boolean hasAll = true;
-                Map<String, Integer> missingItems = new HashMap<>(); // Lưu danh sách đồ bị thiếu để báo lỗi
-
-                // Duyệt qua danh sách cần thiết, so sánh với tổng kho
-                for (Map.Entry<String, Integer> entry : needed.entrySet()) {
+            // 3. Xác định SỐ LẦN CRAFT TỐI ĐA (M)
+            int M;
+            if (!placeAll) {
+                M = 1; // Click bình thường -> Chỉ craft 1 lần
+            } else {
+                M = Integer.MAX_VALUE; // Shift click -> Tính số lần tối đa có thể craft
+                for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
                     String reqId = entry.getKey();
-                    int reqCount = entry.getValue();
-                    int available = getTotalInCache(reqId);
+                    int costPerCraft = entry.getValue();
+                    int inCache = getTotalInCache(reqId);
+                    int inPlayer = playerInv.getOrDefault(reqId, 0);
 
-                    if (available < reqCount) {
-                        hasAll = false;
-                        missingItems.put(reqId, reqCount - available);
-                    }
-                }
+                    // Số lần craft tối đa theo lượng đồ thực có
+                    int maxByAvailability = (inCache + inPlayer) / costPerCraft;
+                    // Giới hạn max 64 item tổng cộng cho mỗi slot nguyên liệu
+                    int maxByStack = 64 / costPerCraft;
 
-                // Nếu có đủ TẤT CẢ nguyên liệu mới bắt đầu chạy đi lấy
-                if (hasAll) {
-                    for (Map.Entry<String, Integer> entry : needed.entrySet()) {
-                        sm.addToRequestQueue(entry.getKey(), entry.getValue());
-                    }
-                    sm.startRetrieval();
-                } else {
-                    // Nếu thiếu đồ, in ra màn hình chat những món còn thiếu và hủy lệnh
-                    StringBuilder warning = new StringBuilder("§cMissing ingredients: ");
-                    boolean first = true;
-                    for (Map.Entry<String, Integer> missing : missingItems.entrySet()) {
-                        if (!first) warning.append(", ");
-                        String cleanName = missing.getKey().replace("minecraft:", "");
-                        warning.append(missing.getValue()).append("x ").append(cleanName);
-                        first = false;
-                    }
-                    ToastUtils.sendToast("§cMissing Ingredients", warning.toString());
+                    M = Math.min(M, Math.min(maxByAvailability, maxByStack));
                 }
             }
+
+            // 4. KIỂM TRA ĐIỀU KIỆN (ALL OR NOTHING)
+            Map<String, Integer> missingItems = new HashMap<>();
+            boolean canCraft = true;
+
+            if (M == 0) {
+                // M = 0 nghĩa là người chơi KHÔNG ĐỦ ĐỒ ĐỂ CRAFT NGAY CẢ 1 LẦN.
+                canCraft = false;
+                for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
+                    String reqId = entry.getKey();
+                    int costPerCraft = entry.getValue();
+                    int available = getTotalInCache(reqId) + playerInv.getOrDefault(reqId, 0);
+
+                    if (available < costPerCraft) {
+                        missingItems.put(reqId, costPerCraft - available);
+                    }
+                }
+            } else {
+                // Kiểm tra lại lần cuối để chắc chắn không có sự cố (thường M>0 là đủ)
+                for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
+                    String reqId = entry.getKey();
+                    int costPerCraft = entry.getValue();
+                    int totalNeeded = M * costPerCraft;
+                    int available = getTotalInCache(reqId) + playerInv.getOrDefault(reqId, 0);
+
+                    if (available < totalNeeded) {
+                        canCraft = false;
+                        missingItems.put(reqId, totalNeeded - available);
+                    }
+                }
+            }
+
+            // 5. THỰC THI RÚT ĐỒ
+            if (canCraft) {
+                boolean addedAny = false;
+                for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
+                    String reqId = entry.getKey();
+                    int costPerCraft = entry.getValue();
+                    int totalNeeded = M * costPerCraft;
+                    int inPlayer = playerInv.getOrDefault(reqId, 0);
+
+                    // Chỉ rút phần CÒN THIẾU
+                    int toPull = totalNeeded - inPlayer;
+                    if (toPull > 0) {
+                        sm.addToRequestQueue(reqId, toPull);
+                        addedAny = true;
+                    }
+                }
+
+                // Nếu có đồ cần lấy, bắt đầu quy trình
+                if (addedAny) {
+                    sm.startRetrieval();
+                }
+            } else {
+                // Báo lỗi thiếu đồ bằng Toast
+                StringBuilder warning = new StringBuilder();
+                boolean first = true;
+                for (Map.Entry<String, Integer> missing : missingItems.entrySet()) {
+                    if (!first) warning.append(", ");
+                    String cleanName = missing.getKey().replace("minecraft:", "");
+                    warning.append(missing.getValue()).append("x ").append(cleanName);
+                    first = false;
+                }
+                ToastUtils.sendToast("§cMissing Ingredients", warning.toString());
+            }
+
         } catch (Exception e) {
             e.printStackTrace();
         }
