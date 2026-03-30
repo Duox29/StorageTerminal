@@ -1,5 +1,6 @@
 package com.duox.storagemanager.logic;
 
+import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -9,12 +10,10 @@ import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.item.Item;
 
 import java.util.Map;
 import java.util.Set;
-import java.util.Comparator;
-import java.util.List;
-import java.util.ArrayList;
 import java.util.function.BiConsumer;
 
 public class ChestScoringEngine {
@@ -37,6 +36,9 @@ public class ChestScoringEngine {
         BlockPos bestPos = null;
         double maxScore = -1;
         double rangeSq = maxRange * maxRange;
+
+        // GIẢI PHÁP: Trích xuất ID gốc (Bỏ qua NBT/Damage) để tìm rương
+        String baseItemId = ItemSerializer.getBaseId(itemId);
 
         debugLogger.accept("findBestChest called for: ", itemId);
         debugLogger.accept("Player pos: " + playerPos + ", Range: " + maxRange, "");
@@ -64,7 +66,16 @@ public class ChestScoringEngine {
                 continue;
             }
 
-            if (!contents.containsKey(itemId)) {
+            // KIỂM TRA MỞ RỘNG: Tìm xem rương có item nào chung Base ID không
+            boolean foundBaseMatch = false;
+            for (String chestKey : contents.keySet()) {
+                if (ItemSerializer.getBaseId(chestKey).equals(baseItemId)) {
+                    foundBaseMatch = true;
+                    break;
+                }
+            }
+
+            if (!foundBaseMatch) {
                 skippedNoItem++;
                 continue;
             }
@@ -89,32 +100,41 @@ public class ChestScoringEngine {
 
     public double calculateScore(BlockPos pos, Map<String, Integer> contents, String itemId,
                                  BlockPos playerPos, BiConsumer<String, String> logger) {
-        // Distance factor (closer = better)
         double distance = Math.sqrt(pos.distSqr(playerPos));
         double distScore = 1.0 / (1.0 + distance / 10.0);
 
         int maxStackSize = getMaxStackSize(itemId);
-        int itemCount = contents.getOrDefault(itemId, 0);
-        double itemScore = Math.min(1.0, itemCount / 64.0);
 
+        // Gộp điểm tập trung (Concentration) cho tất cả đồ nghề có cùng Base ID trong rương này
+        int baseItemCount = 0;
+        boolean hasExactMatch = false;
+        String baseItemId = ItemSerializer.getBaseId(itemId);
+
+        for (Map.Entry<String, Integer> entry : contents.entrySet()) {
+            if (entry.getKey().equals(itemId)) {
+                hasExactMatch = true;
+                baseItemCount += entry.getValue();
+            } else if (ItemSerializer.getBaseId(entry.getKey()).equals(baseItemId)) {
+                baseItemCount += entry.getValue();
+            }
+        }
+
+        double itemScore = Math.min(1.0, baseItemCount / 64.0);
         ChestSpaceInfo spaceInfo = calculateSpace(pos, contents);
-        logger.accept("  Chest " + pos + ": dist=" + String.format("%.2f", distance) +
-                " items=" + itemCount + " availableSlots=" + spaceInfo.availableSlots, "");
 
         double spaceScore;
         if (spaceInfo.availableSlots == 0) {
-            if (contents.containsKey(itemId)) {
-                int lastStackCount = itemCount % maxStackSize;
+            // Rương đầy, chỉ có thể cất nếu có slot dở (và NBT phải giống hệt nhau 100%)
+            if (hasExactMatch) {
+                int exactItemCount = contents.get(itemId);
+                int lastStackCount = exactItemCount % maxStackSize;
                 if (lastStackCount == 0) {
-                    logger.accept("    All stacks FULL, excluding", "");
-                    return -1.0;
+                    return -1.0; // Các stack đều đã đạt Max Stack -> Cấm
                 } else {
-                    spaceScore = 0.3;
-                    logger.accept("    Last stack has space, spaceScore=0.3", "");
+                    spaceScore = 0.3; // Còn chỗ dở trên stack
                 }
             } else {
-                logger.accept("    No empty slots and item not present, excluding", "");
-                return -1.0;
+                return -1.0; // Đồ có NBT khác sẽ ko nhét được vào stack cũ -> Cấm
             }
         } else {
             int totalCapacity = spaceInfo.totalSlots * 64;
@@ -125,12 +145,7 @@ public class ChestScoringEngine {
         double totalWeight = distanceWeight + concentrationWeight + spaceWeight;
         if (totalWeight == 0) totalWeight = 1.0;
 
-        double finalScore = (distScore * distanceWeight + itemScore * concentrationWeight + spaceScore * spaceWeight) / totalWeight;
-
-        logger.accept("    distScore=" + String.format("%.2f", distScore) + " itemScore=" + String.format("%.2f", itemScore) +
-                " spaceScore=" + String.format("%.2f", spaceScore) + " final=" + String.format("%.2f", finalScore), "");
-
-        return finalScore;
+        return (distScore * distanceWeight + itemScore * concentrationWeight + spaceScore * spaceWeight) / totalWeight;
     }
 
     public ChestSpaceInfo calculateSpace(BlockPos pos, Map<String, Integer> contents) {
@@ -141,9 +156,9 @@ public class ChestScoringEngine {
         boolean hasStackableSpace = false;
 
         for (Map.Entry<String, Integer> entry : contents.entrySet()) {
-            String itemId = entry.getKey();
+            String chestItemId = entry.getKey();
             int totalCount = entry.getValue();
-            int maxStack = getMaxStackSize(itemId);
+            int maxStack = getMaxStackSize(chestItemId);
 
             int slotsTaken = (totalCount + maxStack - 1) / maxStack;
             occupiedSlots += slotsTaken;
@@ -159,10 +174,12 @@ public class ChestScoringEngine {
 
     public static int getMaxStackSize(String itemId) {
         try {
-            net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.parse(itemId);
-            var optionalItem = BuiltInRegistries.ITEM.get(location);
-            if (optionalItem.isPresent()) {
-                return optionalItem.get().value().getDefaultMaxStackSize();
+            // FIX BOM NỔ CHẬM: Phải lấy base ID trước khi Parse, nếu không Parser sẽ bị Crash NBT
+            String baseId = ItemSerializer.getBaseId(itemId);
+            net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.parse(baseId);
+            Item item = BuiltInRegistries.ITEM.getOptional(location).orElse(null);
+            if (item != null) {
+                return item.getDefaultMaxStackSize();
             }
         } catch (Exception e) {
             // Default to 64 on error

@@ -5,6 +5,7 @@ import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.settings.BooleanSetting;
+import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -95,10 +96,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
-            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id))
-                    .map(net.minecraft.core.Holder::value)
-                    .orElse(net.minecraft.world.item.Items.AIR);
-            this.stack = new ItemStack(item);
+            this.stack = ItemSerializer.deserialize(id);
         }
     }
 

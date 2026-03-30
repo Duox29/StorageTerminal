@@ -3,9 +3,11 @@ package com.duox.storagemanager.gui;
 import com.duox.storagemanager.gui.widgets.SlotScrollHandler;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
+import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.utils.CacheDatabase;
+import com.duox.storagemanager.utils.ItemSerializer;
 import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -70,6 +72,7 @@ public class StorageScreen extends Screen {
 
     // Custom scroll handler
     private SlotScrollHandler<ItemEntry> scrollHandler;
+    private ItemFilterCategory currentCategory = ItemFilterCategory.ALL;
 
     private boolean keepModuleOn = false;
     private List<ItemEntry> allItems = new ArrayList<>();
@@ -91,10 +94,7 @@ public class StorageScreen extends Screen {
         ItemEntry(String id, int count) {
             this.id = id;
             this.totalCount = count;
-            Item item = BuiltInRegistries.ITEM.get(net.minecraft.resources.Identifier.parse(id))
-                    .map(net.minecraft.core.Holder::value) // Extract Item from Holder
-                    .orElse(net.minecraft.world.item.Items.AIR);
-            this.stack = new ItemStack(item);
+            this.stack = ItemSerializer.deserialize(id);
         }
     }
 
@@ -281,6 +281,24 @@ public class StorageScreen extends Screen {
             }
         });
         this.addRenderableWidget(this.buildCacheButton);
+        int btnWidth = 55;
+        int btnHeight = 24;
+        int startY = guiTop;
+        int startX = guiLeft - btnWidth - 4;
+
+        ItemFilterCategory[] categories = ItemFilterCategory.values();
+        for (int i = 0; i < categories.length; i++) {
+            ItemFilterCategory cat = categories[i];
+            int yPos = startY + (i * (btnHeight + 2));
+
+            ModernButton catBtn = new ModernButton(startX, yPos, btnWidth, btnHeight, Component.literal(cat.displayName), b -> {
+                this.currentCategory = cat;
+                this.filterItems(); // Gọi lại hàm lọc khi bấm nút
+                Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+            }).setActiveSupplier(() -> this.currentCategory == cat); // Đổi màu nút nếu đang được chọn
+
+            this.addRenderableWidget(catBtn);
+        }
 
         refreshItemList();
     }
@@ -581,14 +599,17 @@ public class StorageScreen extends Screen {
 
     private void filterItems() {
         String query = searchBox.getValue().toLowerCase();
-        if (query.isEmpty()) {
-            filteredItems = new ArrayList<>(allItems);
-        } else {
-            filteredItems = allItems.stream()
-                    .filter(e -> e.stack.getHoverName().getString().toLowerCase().contains(query)
-                            || e.id.contains(query))
-                    .collect(Collectors.toList());
-        }
+
+        filteredItems = allItems.stream()
+                // 1. Lọc theo danh mục trước (Category)
+                .filter(entry -> currentCategory.matches(entry.stack))
+                // 2. Lọc theo Text Search (chỉ tìm nếu query không rỗng)
+                .filter(entry -> query.isEmpty() ||
+                        entry.stack.getHoverName().getString().toLowerCase().contains(query) ||
+                        entry.id.contains(query))
+                .collect(Collectors.toList());
+
+        // Tính toán lại thanh cuộn
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         if (totalRows <= GRID_ROWS) {
             scrollPosition = 0.0f;

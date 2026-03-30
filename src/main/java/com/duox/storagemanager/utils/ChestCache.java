@@ -94,7 +94,7 @@ public class ChestCache {
         for (int i = 0; i < containerSlots; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
             if (!stack.isEmpty()) {
-                String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                String itemId = ItemSerializer.serialize(stack);
                 contents.put(itemId, contents.getOrDefault(itemId, 0) + stack.getCount());
             }
         }

@@ -8,6 +8,7 @@ import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.CacheDatabase;
 import com.duox.storagemanager.utils.CacheUtils;
 import com.duox.storagemanager.utils.InventoryUtils;
+import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -295,28 +296,57 @@ public class StorageManager extends Module {
         // Đã xóa lệnh tắt module ở đây
     }
 
-    private void processChestContents(Map<String, Integer> contents, BlockPos chestPos,
-                                      Map<String, Integer> remainingNeeds) {
-        Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<String, Integer> req = it.next();
-            String itemId = req.getKey();
+    private void processChestContents(Map<String, Integer> contents, BlockPos chestPos, Map<String, Integer> remainingNeeds) {
+        List<String> fulfilledNeeds = new ArrayList<>();
+
+        for (Map.Entry<String, Integer> req : remainingNeeds.entrySet()) {
+            String reqId = req.getKey();
             int needed = req.getValue();
 
-            if (contents.containsKey(itemId)) {
-                int available = contents.get(itemId);
+            // 1. THỬ KHỚP CHÍNH XÁC (Dành cho việc user tự tay click rút đồ có Enchant từ GUI)
+            if (contents.containsKey(reqId)) {
+                int available = contents.get(reqId);
                 int toTake = Math.min(needed, available);
-
                 if (toTake > 0) {
-                    retrievalPlan.computeIfAbsent(chestPos, k -> new HashMap<>()).put(itemId, toTake);
-                    int newNeeded = needed - toTake;
-                    if (newNeeded <= 0) {
-                        it.remove();
-                    } else {
-                        req.setValue(newNeeded);
+                    retrievalPlan.computeIfAbsent(chestPos, k -> new HashMap<>()).put(reqId, toTake);
+                    needed -= toTake;
+                }
+            }
+
+            // 2. THỬ KHỚP CƠ BẢN (Dành cho Auto-Crafting bằng Recipe Book)
+            // Nếu vẫn còn thiếu và reqId không phải là một chuỗi SNBT phức tạp
+            if (needed > 0 && !reqId.startsWith("{")) {
+                for (Map.Entry<String, Integer> chestItem : contents.entrySet()) {
+                    String cacheKey = chestItem.getKey();
+
+                    // So sánh ID cơ bản bỏ qua NBT
+                    if (ItemSerializer.getBaseId(cacheKey).equals(reqId)) {
+                        int available = chestItem.getValue();
+                        // Tính số lượng item này đã được lên kế hoạch lấy ra trước đó (để tránh lấy lố)
+                        int planned = retrievalPlan.getOrDefault(chestPos, new HashMap<>()).getOrDefault(cacheKey, 0);
+                        int actualAvailable = available - planned;
+
+                        if (actualAvailable > 0) {
+                            int toTake = Math.min(needed, actualAvailable);
+                            retrievalPlan.computeIfAbsent(chestPos, k -> new HashMap<>()).put(cacheKey, toTake);
+                            needed -= toTake;
+                            if (needed <= 0) break; // Đủ rồi thì dừng
+                        }
                     }
                 }
             }
+
+            // Cập nhật lại số lượng còn thiếu
+            if (needed <= 0) {
+                fulfilledNeeds.add(reqId);
+            } else if (needed != req.getValue()) {
+                req.setValue(needed);
+            }
+        }
+
+        // Xóa các item đã lấy đủ ra khỏi danh sách yêu cầu
+        for (String f : fulfilledNeeds) {
+            remainingNeeds.remove(f);
         }
     }
 
@@ -449,7 +479,7 @@ public class StorageManager extends Module {
             ItemStack stack = menu.getSlot(i).getItem();
             if (stack.isEmpty()) continue;
 
-            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            String itemId = ItemSerializer.serialize(stack);
             if (!itemsToTake.containsKey(itemId)) continue;
 
             int needed = itemsToTake.get(itemId);

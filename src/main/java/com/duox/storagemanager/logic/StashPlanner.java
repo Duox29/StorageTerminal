@@ -1,9 +1,9 @@
 package com.duox.storagemanager.logic;
 
+import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.*;
 import java.util.function.BiConsumer;
@@ -35,14 +35,16 @@ public class StashPlanner {
             ItemStack stack = player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
 
-            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+            String itemId = ItemSerializer.serialize(stack);
+            String baseItemId = ItemSerializer.getBaseId(itemId);
             int count = stack.getCount();
 
             logger.accept("Slot " + i + ": " + itemId + " x" + count, "");
 
-            // Check if item exists in any cache for debugging
+            // Debug logic: Cũng check theo Base ID thay vì ID NBT tuyệt đối
             boolean inAnyCache = cache.values().stream()
-                    .anyMatch(contents -> contents.containsKey(itemId));
+                    .anyMatch(contents -> contents.keySet().stream()
+                            .anyMatch(k -> ItemSerializer.getBaseId(k).equals(baseItemId)));
 
             if (!inAnyCache) {
                 logger.accept("  Item NOT found in any active cache!", "");
