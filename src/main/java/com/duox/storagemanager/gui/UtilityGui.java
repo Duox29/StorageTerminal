@@ -76,26 +76,6 @@ public class UtilityGui extends Screen {
         this.dynamicWidgets.add(keybindWidget);
         startY += 20 + PADDING;
 
-        for (Setting<?> setting : module.getSettings()) {
-            int height = (setting instanceof com.duox.storagemanager.system.settings.BlockListSetting
-                    || setting instanceof com.duox.storagemanager.system.settings.EntityListSetting
-                    || setting instanceof com.duox.storagemanager.system.settings.ItemListSetting
-                    || setting instanceof com.duox.storagemanager.system.settings.EnchantmentListSetting)
-                    ? Constants.GUI_LIST_WIDGET_HEIGHT : 20;
-
-            SettingWidget widget = com.duox.storagemanager.gui.factory.WidgetFactory.create(setting, startX, startY, widgetWidth, height);
-
-            if (widget != null) {
-                // Pass a callback that re-runs initSettingsPanel to refresh layout
-                widget.init(w -> {
-                    this.addRenderableWidget(w);
-                    this.dynamicWidgets.add(w);
-                }, () -> this.initSettingsPanel(this.selectedModule));
-
-                this.customRenderWidgets.add(widget);
-                startY += widget.getHeight() + PADDING;
-            }
-        }
     }
 
     @Override

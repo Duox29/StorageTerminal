@@ -44,8 +44,6 @@ public class StorageManager {
         // Register game events (tick, input, etc.)
         NeoForge.EVENT_BUS.register(this);
 
-        // Initialize systems
-        BlockSelector.INSTANCE.init();
     }
 
     /**
