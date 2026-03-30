@@ -2,6 +2,7 @@ package com.duox.storagemanager.mixin;
 
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
 import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
@@ -23,12 +24,8 @@ import java.util.Map;
 
 /**
  * MixinRecipeBookComponent
- * 
  * Intercepts recipe clicks in the Recipe Book to automatically request
  * missing ingredients from the StorageManager.
- * 
- * Uses robust reflection to access RecipeDisplay ingredients across
- * different mappings and versions.
  */
 @Mixin(RecipeBookComponent.class)
 public class MixinRecipeBookComponent {
@@ -36,27 +33,20 @@ public class MixinRecipeBookComponent {
     @Shadow
     protected Minecraft minecraft;
 
-    /**
-     * Inject into tryPlaceRecipe to intercept recipe clicks.
-     * This method was identified existing in MC 1.21.11 via debugging.
-     */
     @Inject(method = "tryPlaceRecipe", at = @At("HEAD"))
     private void onTryPlaceRecipe(RecipeCollection collection,
-            RecipeDisplayId id,
-            boolean placeAll,
-            CallbackInfoReturnable<Boolean> cir) {
+                                  RecipeDisplayId id,
+                                  boolean placeAll,
+                                  CallbackInfoReturnable<Boolean> cir) {
         try {
             StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
             if (sm == null || !sm.isEnabled() || !sm.autoRequestRecipe.getValue()) {
                 return;
             }
 
-            // Get ClientRecipeBook to resolve ID to Display
-            if (minecraft.player == null)
-                return;
+            if (minecraft.player == null) return;
             var book = minecraft.player.getRecipeBook();
 
-            // Use accessor to get the known map
             if (book instanceof ClientRecipeBookAccessor accessor) {
                 var known = accessor.getKnown();
                 var entry = known.get(id);
@@ -71,10 +61,6 @@ public class MixinRecipeBookComponent {
         }
     }
 
-    /**
-     * Process recipe ingredients from RecipeDisplay and request missing items from
-     * storage
-     */
     @SuppressWarnings("unchecked")
     private void requestIngredientsFromDisplay(RecipeDisplay display, StorageManager sm) {
         Map<String, Integer> needed = new HashMap<>();
@@ -82,8 +68,7 @@ public class MixinRecipeBookComponent {
         try {
             List<SlotDisplay> ingredientSlots = null;
 
-            // Robust reflection: find any field returning List that contains SlotDisplay
-            // This avoids issues with obfuscated field names or record component names
+            // Robust reflection to find ingredient list
             for (java.lang.reflect.Field field : display.getClass().getDeclaredFields()) {
                 field.setAccessible(true);
                 if (List.class.isAssignableFrom(field.getType())) {
@@ -94,12 +79,10 @@ public class MixinRecipeBookComponent {
                             ingredientSlots = (List<SlotDisplay>) list;
                             break;
                         }
-                    } catch (Exception ignored) {
-                    }
+                    } catch (Exception ignored) {}
                 }
             }
 
-            // If field access failed (e.g. record), try accessor methods
             if (ingredientSlots == null) {
                 for (java.lang.reflect.Method method : display.getClass().getDeclaredMethods()) {
                     if (List.class.isAssignableFrom(method.getReturnType()) && method.getParameterCount() == 0) {
@@ -110,34 +93,34 @@ public class MixinRecipeBookComponent {
                                 ingredientSlots = (List<SlotDisplay>) list;
                                 break;
                             }
-                        } catch (Exception ignored) {
-                        }
+                        } catch (Exception ignored) {}
                     }
                 }
             }
 
-            if (ingredientSlots == null)
-                return;
+            if (ingredientSlots == null) return;
 
+            // 1. Phân tích các nguyên liệu cần thiết (Lấy loại có nhiều nhất trong kho nếu dùng Tag)
             for (SlotDisplay slotDisplay : ingredientSlots) {
-                // SlotDisplay needs to be converted to ItemStacks
                 List<ItemStack> possibleItems = resolveSlotDisplay(slotDisplay);
 
                 if (!possibleItems.isEmpty()) {
-                    // Priority: Item already in cache
                     String bestItemId = null;
+                    int maxAvailable = -1;
+
+                    // Quét các item hợp lệ, ưu tiên chọn item mà chúng ta đang có NHIỀU NHẤT trong kho
                     for (ItemStack stack : possibleItems) {
-                        if (stack.isEmpty())
-                            continue;
-                        String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                        if (hasInCache(id)) {
-                            bestItemId = id;
-                            break;
+                        if (stack.isEmpty()) continue;
+                        String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                        int available = getTotalInCache(itemId);
+                        if (available > maxAvailable) {
+                            maxAvailable = available;
+                            bestItemId = itemId;
                         }
                     }
 
-                    // If not in cache, use first variant
-                    if (bestItemId == null && !possibleItems.get(0).isEmpty()) {
+                    // Nếu không có món nào trong kho, fallback về item đầu tiên của recipe
+                    if (bestItemId == null || maxAvailable <= 0) {
                         bestItemId = BuiltInRegistries.ITEM.getKey(possibleItems.get(0).getItem()).toString();
                     }
 
@@ -147,13 +130,11 @@ public class MixinRecipeBookComponent {
                 }
             }
 
-            // Check what's already in inventory
+            // 2. Trừ đi số lượng đã có sẵn trong túi đồ của người chơi
             Inventory inventory = minecraft.player.getInventory();
-
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack stack = inventory.getItem(i);
-                if (stack.isEmpty())
-                    continue;
+                if (stack.isEmpty()) continue;
 
                 String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
                 if (needed.containsKey(id)) {
@@ -167,17 +148,40 @@ public class MixinRecipeBookComponent {
                 }
             }
 
-            // Add to Request Queue and start retrieval
+            // 3. KIỂM TRA ĐỦ ĐIỀU KIỆN (ALL OR NOTHING)
             if (!needed.isEmpty()) {
-                boolean added = false;
+                boolean hasAll = true;
+                Map<String, Integer> missingItems = new HashMap<>(); // Lưu danh sách đồ bị thiếu để báo lỗi
+
+                // Duyệt qua danh sách cần thiết, so sánh với tổng kho
                 for (Map.Entry<String, Integer> entry : needed.entrySet()) {
-                    if (hasInCache(entry.getKey())) {
-                        sm.addToRequestQueue(entry.getKey(), entry.getValue());
-                        added = true;
+                    String reqId = entry.getKey();
+                    int reqCount = entry.getValue();
+                    int available = getTotalInCache(reqId);
+
+                    if (available < reqCount) {
+                        hasAll = false;
+                        missingItems.put(reqId, reqCount - available);
                     }
                 }
-                if (added) {
+
+                // Nếu có đủ TẤT CẢ nguyên liệu mới bắt đầu chạy đi lấy
+                if (hasAll) {
+                    for (Map.Entry<String, Integer> entry : needed.entrySet()) {
+                        sm.addToRequestQueue(entry.getKey(), entry.getValue());
+                    }
                     sm.startRetrieval();
+                } else {
+                    // Nếu thiếu đồ, in ra màn hình chat những món còn thiếu và hủy lệnh
+                    StringBuilder warning = new StringBuilder("§cMissing ingredients: ");
+                    boolean first = true;
+                    for (Map.Entry<String, Integer> missing : missingItems.entrySet()) {
+                        if (!first) warning.append(", ");
+                        String cleanName = missing.getKey().replace("minecraft:", "");
+                        warning.append(missing.getValue()).append("x ").append(cleanName);
+                        first = false;
+                    }
+                    ToastUtils.sendToast("§cMissing Ingredients", warning.toString());
                 }
             }
         } catch (Exception e) {
@@ -186,39 +190,70 @@ public class MixinRecipeBookComponent {
     }
 
     /**
-     * Resolve a SlotDisplay to a list of possible ItemStacks
+     * Hàm tiện ích tính TỔNG số lượng của 1 loại item có trong toàn bộ mạng lưới cache.
+     */
+    private int getTotalInCache(String itemId) {
+        Map<String, Map<String, Integer>> cache = com.duox.storagemanager.modules.AutoStash.getChestCache();
+        if (cache == null) return 0;
+
+        int total = 0;
+        for (Map<String, Integer> chestContents : cache.values()) {
+            if (chestContents != null && chestContents.containsKey(itemId)) {
+                total += chestContents.get(itemId);
+            }
+        }
+        return total;
+    }
+
+    /**
+     * Resolve a SlotDisplay to a list of possible ItemStacks.
      */
     private List<ItemStack> resolveSlotDisplay(SlotDisplay slotDisplay) {
+        return resolveSlotDisplaySafe(slotDisplay, new java.util.HashSet<>(), 0);
+    }
+
+    /**
+     * Hàm đệ quy thực sự với cơ chế chống Crash (Cycle Detection & Depth Limit)
+     */
+    private List<ItemStack> resolveSlotDisplaySafe(SlotDisplay slotDisplay, java.util.Set<Object> visited, int depth) {
         List<ItemStack> result = new java.util.ArrayList<>();
 
-        // Use a simple visitor pattern to extract items from SlotDisplay
+        if (slotDisplay == null || depth > 5 || !visited.add(slotDisplay)) {
+            return result;
+        }
+
         if (slotDisplay instanceof SlotDisplay.ItemStackSlotDisplay itemDisplay) {
             result.add(itemDisplay.stack());
         } else if (slotDisplay instanceof SlotDisplay.ItemSlotDisplay itemSlotDisplay) {
-            // Convert Item to ItemStack
             result.add(new ItemStack(itemSlotDisplay.item()));
         } else if (slotDisplay instanceof SlotDisplay.TagSlotDisplay tagDisplay) {
-            // For tag displays, iterate through registry to find items with this tag
             var tagKey = tagDisplay.tag();
-
-            // Iterate through all items and check if they have this tag
             for (var item : BuiltInRegistries.ITEM) {
-                // Check if this item belongs to the tag
                 var holder = BuiltInRegistries.ITEM.wrapAsHolder(item);
                 if (holder.is(tagKey)) {
                     result.add(new ItemStack(item));
-                    // Only take first few items from tag to avoid too many results
-                    if (result.size() >= 5)
-                        break;
+                    if (result.size() >= 5) break;
                 }
             }
+        } else {
+            try {
+                for (java.lang.reflect.Field field : slotDisplay.getClass().getDeclaredFields()) {
+                    field.setAccessible(true);
+                    Object val = field.get(slotDisplay);
+
+                    if (val instanceof SlotDisplay nestedDisplay) {
+                        result.addAll(resolveSlotDisplaySafe(nestedDisplay, visited, depth + 1));
+                    } else if (val instanceof java.util.List<?> list) {
+                        for (Object obj : list) {
+                            if (obj instanceof SlotDisplay nestedListDisplay) {
+                                result.addAll(resolveSlotDisplaySafe(nestedListDisplay, visited, depth + 1));
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ignored) {}
         }
 
         return result;
-    }
-
-    private boolean hasInCache(String itemId) {
-        StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
-        return sm != null && sm.hasItemInCache(itemId);
     }
 }

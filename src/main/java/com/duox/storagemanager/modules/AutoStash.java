@@ -471,9 +471,7 @@ public class AutoStash extends Module {
     }
 
     private void sendMessage(String message) {
-        if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("§b[AutoStash] §r" + message), false);
-        }
+        com.duox.storagemanager.utils.ToastUtils.sendToast("§bAutoStash", message);
     }
 
     // FIX: Signature updated to match StashPlanner's BiConsumer<String, String> requirement

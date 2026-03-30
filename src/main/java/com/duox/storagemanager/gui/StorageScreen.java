@@ -6,6 +6,7 @@ import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.utils.CacheDatabase;
+import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -233,9 +234,8 @@ public class StorageScreen extends Screen {
             // Refresh visible list immediately
             refreshItemList();
 
-            if (this.minecraft.player != null) {
-                this.minecraft.player.displayClientMessage(Component.literal("§6[Storage] §fCache cleared."), true);
-            }
+            ToastUtils.sendToast("§6Storage", "Cache cleared.");
+
         }).bounds(clearBtnX, topButtonsY, sideBtnWidth, 20).build());
 
         // 3. Nút Build Cache (Nằm bên trái nút Clear)
@@ -250,9 +250,7 @@ public class StorageScreen extends Screen {
                         .ifPresent(s -> ((BooleanSetting) s).setValue(true));
 
                 stash.setEnabled(true);
-                if (this.minecraft.player != null) {
-                    this.minecraft.player.displayClientMessage(Component.literal("§b[Storage] §fRebuilding cache..."), true);
-                }
+                ToastUtils.sendToast("§bStorage", "Rebuilding cache...");
             }
         }).bounds(buildBtnX, topButtonsY, sideBtnWidth, 20).build());
         refreshItemList();

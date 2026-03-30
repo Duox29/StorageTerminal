@@ -569,11 +569,8 @@ public class StorageManager extends Module {
     }
 
     private void sendMessage(String message) {
-        if (mc.player != null) {
-            mc.player.displayClientMessage(Component.literal("§6[StorageManager] §r" + message), false);
-        }
+        com.duox.storagemanager.utils.ToastUtils.sendToast("§6StorageManager", message);
     }
-
     private class ChestComparator implements Comparator<String> {
         private final Map<String, Map<String, Integer>> cache;
         private final Map<String, Integer> remainingNeeds;
