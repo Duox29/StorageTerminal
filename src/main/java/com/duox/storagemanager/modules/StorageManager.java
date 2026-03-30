@@ -8,15 +8,14 @@ import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.CacheDatabase;
 import com.duox.storagemanager.utils.CacheUtils;
 import com.duox.storagemanager.utils.InventoryUtils;
-import com.google.gson.reflect.TypeToken;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.HitResult;
@@ -24,17 +23,8 @@ import net.minecraft.client.gui.screens.inventory.CraftingScreen;
 import net.minecraft.world.level.block.CraftingTableBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
-import java.lang.reflect.Type;
-import java.nio.file.Path;
 import java.util.*;
 
-/**
- * StorageManager Module
- * 
- * Manages automated item retrieval from cached chests.
- * Uses a state machine to plan pathways, open chests silently,
- * withdraw required items, and return to the original container.
- */
 public class StorageManager extends Module {
     // Request Queue: Item ID -> Quantity needed
     private final Map<String, Integer> requestQueue = new HashMap<>();
@@ -44,6 +34,10 @@ public class StorageManager extends Module {
     private Iterator<Map.Entry<BlockPos, Map<String, Integer>>> retrievalIterator;
     private Map.Entry<BlockPos, Map<String, Integer>> currentTargetEntry;
 
+    // --- AUTO CRAFTING VARIABLES ---
+    private RecipeDisplayId pendingRecipeId = null;
+    private boolean pendingRecipePlaceAll = false;
+
     // State Machine
     private enum State {
         IDLE,
@@ -51,7 +45,8 @@ public class StorageManager extends Module {
         OPENING_CHEST,
         WAITING_FOR_OPEN,
         WITHDRAWING,
-        CLOSING_CHEST
+        CLOSING_CHEST,
+        WAITING_FOR_RETURN_OPEN
     }
 
     private static final int CHEST_OPEN_TIMEOUT = 11;
@@ -108,11 +103,9 @@ public class StorageManager extends Module {
             mc.setScreen(new StorageScreen(this));
         }
 
-        // If we have pending requests, start processing them
         if (!requestQueue.isEmpty()) {
             startRetrieval();
         } else {
-            // Otherwise just open the GUI
             mc.setScreen(new StorageScreen(this));
         }
     }
@@ -125,7 +118,7 @@ public class StorageManager extends Module {
     @Override
     public void onTick() {
         if (mc.player == null || mc.level == null) {
-            this.setEnabled(false);
+            this.setEnabled(false); // Vẫn tắt nếu người chơi thoát game
             return;
         }
 
@@ -145,6 +138,9 @@ public class StorageManager extends Module {
             case CLOSING_CHEST:
                 closeSilent();
                 break;
+            case WAITING_FOR_RETURN_OPEN:
+                handleWaitingForReturn();
+                break;
             case IDLE:
                 break;
         }
@@ -158,16 +154,21 @@ public class StorageManager extends Module {
 
     public void clearRequestQueue() {
         requestQueue.clear();
+        pendingRecipeId = null;
     }
 
     public Map<String, Integer> getRequestQueue() {
         return requestQueue;
     }
 
+    public void setPendingRecipe(RecipeDisplayId id, boolean placeAll) {
+        this.pendingRecipeId = id;
+        this.pendingRecipePlaceAll = placeAll;
+    }
+
     public boolean hasItemInCache(String itemId) {
         Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
-        if (cache == null)
-            return false;
+        if (cache == null) return false;
 
         for (Map<String, Integer> content : cache.values()) {
             if (content != null && content.containsKey(itemId) && content.get(itemId) > 0) {
@@ -183,9 +184,7 @@ public class StorageManager extends Module {
             return;
         }
 
-        // Check for open crafting table and save its position
         captureCraftingTableContext();
-
         currentState = State.PLANNING;
     }
 
@@ -206,42 +205,18 @@ public class StorageManager extends Module {
     }
 
     // --- Internal Logic ---
-
-    /**
-     * Load cache from DB (with legacy JSON migration) if not already loaded.
-     * PUBLIC so it can be called from StorageScreen constructor.
-     */
     public void ensureCacheLoaded() {
         Map<String, Map<String, Integer>> globalBuffer = AutoStash.getGlobalBuffer();
-
-        // If globalBuffer is empty, try to load from DB
         if (globalBuffer.isEmpty()) {
             CacheDatabase db = CacheDatabase.getInstance(mc);
-            Type type = new TypeToken<Map<String, Map<String, Integer>>>() {
-            }.getType();
-
             Map<String, Map<String, Integer>> loaded = db.loadAll();
 
-            // Legacy migration: if DB empty but JSON exists, load JSON then persist to DB
-            // if (loaded == null || loaded.isEmpty()) {
-            //     Path jsonPath = CacheUtils.getCacheFilePath(mc, "autostash");
-            //     Map<String, Map<String, Integer>> legacy = CacheUtils.loadFromJson(jsonPath, type);
-            //     if (legacy != null && !legacy.isEmpty()) {
-            //         db.replaceAll(legacy);
-            //         loaded = legacy;
-            //     }
-            // }
-
             if (loaded != null && !loaded.isEmpty()) {
-                // Load into globalBuffer
                 globalBuffer.putAll(loaded);
-                // Refresh activeCache based on current position and scan range
                 if (mc.player != null) {
                     AutoStash autoStash = com.duox.storagemanager.system.ModuleManager.INSTANCE
                             .getModule(AutoStash.class);
-                    if (autoStash != null) {
-                        autoStash.forceRefreshActiveCache();
-                    }
+                    if (autoStash != null) autoStash.forceRefreshActiveCache();
                 }
 
                 AutoStash.cacheDirty = true;
@@ -258,6 +233,7 @@ public class StorageManager extends Module {
         returnToContainerPos = null;
         silentContainerId = -1;
         containerReady = false;
+        pendingRecipeId = null;
         retrievalPlan.clear();
         retrievalIterator = null;
         currentTargetEntry = null;
@@ -277,9 +253,7 @@ public class StorageManager extends Module {
 
         for (String chestPosStr : sortedChests) {
             Map<String, Integer> contents = cache.get(chestPosStr);
-            if (contents == null || contents.isEmpty()) {
-                continue;
-            }
+            if (contents == null || contents.isEmpty()) continue;
 
             BlockPos chestPos = CacheUtils.stringToPos(chestPosStr);
             processChestContents(contents, chestPos, remainingNeeds);
@@ -295,7 +269,7 @@ public class StorageManager extends Module {
     }
 
     private List<String> sortChestsByRelevance(Map<String, Map<String, Integer>> cache,
-            Map<String, Integer> remainingNeeds, BlockPos playerPos) {
+                                               Map<String, Integer> remainingNeeds, BlockPos playerPos) {
         List<String> sortedChests = new ArrayList<>(cache.keySet());
         sortedChests.sort(new ChestComparator(cache, remainingNeeds, playerPos));
         return sortedChests;
@@ -304,6 +278,7 @@ public class StorageManager extends Module {
     private void finalizePlanning(Map<String, Integer> remainingNeeds) {
         if (!remainingNeeds.isEmpty()) {
             sendMessage("Warning: Cannot find all items. Missing: " + remainingNeeds);
+            pendingRecipeId = null;
         }
 
         if (retrievalPlan.isEmpty()) {
@@ -317,11 +292,11 @@ public class StorageManager extends Module {
 
     private void finishWhenQueueEmpty() {
         currentState = State.IDLE;
-        this.setEnabled(false);
+        // Đã xóa lệnh tắt module ở đây
     }
 
     private void processChestContents(Map<String, Integer> contents, BlockPos chestPos,
-            Map<String, Integer> remainingNeeds) {
+                                      Map<String, Integer> remainingNeeds) {
         Iterator<Map.Entry<String, Integer>> it = remainingNeeds.entrySet().iterator();
         while (it.hasNext()) {
             Map.Entry<String, Integer> req = it.next();
@@ -349,7 +324,7 @@ public class StorageManager extends Module {
         sendMessage("Could not find any items to retrieve.");
         if (requestQueue.isEmpty()) {
             currentState = State.IDLE;
-            this.setEnabled(false);
+            // Đã xóa lệnh tắt module ở đây
         } else {
             calculateRetrievalPlan();
         }
@@ -379,22 +354,41 @@ public class StorageManager extends Module {
         } else {
             sendMessage("Retrieval complete.");
             if (!requestQueue.isEmpty()) {
-                // Restart planning if new requests exist
                 currentState = State.PLANNING;
             } else {
-                // Finish if queue is empty
                 if (returnToContainerPos != null) {
                     openReturnContainer();
                     returnToContainerPos = null;
+                    waitTimer = 20;
+                    currentState = State.WAITING_FOR_RETURN_OPEN;
+                } else {
+                    currentState = State.IDLE;
+                    // Đã xóa lệnh tắt module ở đây
                 }
+            }
+        }
+    }
+
+    private void handleWaitingForReturn() {
+        if (mc.screen instanceof CraftingScreen) {
+            if (pendingRecipeId != null && mc.player != null) {
+                mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, pendingRecipeId, pendingRecipePlaceAll);
+                pendingRecipeId = null;
+            }
+            currentState = State.IDLE;
+            // Đã xóa lệnh tắt module ở đây
+        } else {
+            waitTimer--;
+            if (waitTimer <= 0) {
                 currentState = State.IDLE;
+                pendingRecipeId = null;
+                // Đã xóa lệnh tắt module ở đây
             }
         }
     }
 
     private void openTargetSilent() {
-        if (currentTarget == null)
-            return;
+        if (currentTarget == null) return;
 
         Vec3 center = Vec3.atCenterOf(currentTarget);
         BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, currentTarget, false);
@@ -426,18 +420,17 @@ public class StorageManager extends Module {
     }
 
     public boolean isSilentMode() {
-        return this.isEnabled() && (currentState != State.IDLE && currentState != State.PLANNING);
+        return this.isEnabled() && (currentState != State.IDLE && currentState != State.PLANNING && currentState != State.WAITING_FOR_RETURN_OPEN);
     }
 
     private void performWithdrawal() {
-        // Add artificial delay to prevent packet spam and desync
         if (waitTimer > 0) {
             waitTimer--;
             return;
         }
 
         AbstractContainerMenu menu = mc.player.containerMenu;
-        int containerSlots = menu.slots.size() - PLAYER_INVENTORY_SIZE; // inventory always last 36 slots
+        int containerSlots = menu.slots.size() - PLAYER_INVENTORY_SIZE;
 
         if (containerSlots <= 0) {
             currentState = State.CLOSING_CHEST;
@@ -451,34 +444,26 @@ public class StorageManager extends Module {
         }
     }
 
-    private boolean processContainerSlots(AbstractContainerMenu menu, Map<String, Integer> itemsToTake,
-            int containerSlots) {
+    private boolean processContainerSlots(AbstractContainerMenu menu, Map<String, Integer> itemsToTake, int containerSlots) {
         for (int i = 0; i < containerSlots; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
-            if (stack.isEmpty()) {
-                continue;
-            }
+            if (stack.isEmpty()) continue;
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-            if (!itemsToTake.containsKey(itemId)) {
-                continue;
-            }
+            if (!itemsToTake.containsKey(itemId)) continue;
 
             int needed = itemsToTake.get(itemId);
-            if (needed <= 0) {
-                continue;
-            }
+            if (needed <= 0) continue;
 
             if (tryWithdrawItem(menu, i, stack, itemId, needed, containerSlots)) {
                 return true;
             }
         }
-
         return false;
     }
 
     private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId,
-            int needed, int containerSlots) {
+                                    int needed, int containerSlots) {
         int inSlot = stack.getCount();
         int actualTaken = 0;
         boolean isPartial = false;
@@ -525,8 +510,7 @@ public class StorageManager extends Module {
     }
 
     private void updateCache(String itemId, int amountTaken) {
-        if (currentTarget == null)
-            return;
+        if (currentTarget == null) return;
 
         String chestJsonKey = CacheUtils.posToString(currentTarget);
         Map<String, Map<String, Integer>> globalCache = AutoStash.getGlobalBuffer();
@@ -543,7 +527,6 @@ public class StorageManager extends Module {
                     chestContents.put(itemId, newAmount);
                 }
 
-                // Use the new updateGlobalAndSync to sync both layers and file
                 AutoStash.updateGlobalAndSync(currentTarget, chestContents);
             }
         }
@@ -558,8 +541,7 @@ public class StorageManager extends Module {
     }
 
     private void openReturnContainer() {
-        if (returnToContainerPos == null)
-            return;
+        if (returnToContainerPos == null) return;
 
         Vec3 center = Vec3.atCenterOf(returnToContainerPos);
         BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, returnToContainerPos, false);
@@ -571,13 +553,14 @@ public class StorageManager extends Module {
     private void sendMessage(String message) {
         com.duox.storagemanager.utils.ToastUtils.sendToast("§6StorageManager", message);
     }
+
     private class ChestComparator implements Comparator<String> {
         private final Map<String, Map<String, Integer>> cache;
         private final Map<String, Integer> remainingNeeds;
         private final BlockPos playerPos;
 
         public ChestComparator(Map<String, Map<String, Integer>> cache, Map<String, Integer> remainingNeeds,
-                BlockPos playerPos) {
+                               BlockPos playerPos) {
             this.cache = cache;
             this.remainingNeeds = remainingNeeds;
             this.playerPos = playerPos;
@@ -588,17 +571,13 @@ public class StorageManager extends Module {
             Map<String, Integer> c1Contents = cache.get(s1);
             Map<String, Integer> c2Contents = cache.get(s2);
 
-            // Calculate "Relevance Score" -> The quantity of the needed item in the chest.
-            // We want the chest where the needed item count is SMALLEST (but > 0).
             int score1 = getMinRelevantQuantity(c1Contents, remainingNeeds);
             int score2 = getMinRelevantQuantity(c2Contents, remainingNeeds);
 
-            // If one chest doesn't have what we need, push it to end (MAX_VALUE)
             if (score1 != score2) {
                 return Integer.compare(score1, score2);
             }
 
-            // Tie-break with distance
             BlockPos p1 = CacheUtils.stringToPos(s1);
             BlockPos p2 = CacheUtils.stringToPos(s2);
             return Double.compare(p1.distSqr(playerPos), p2.distSqr(playerPos));

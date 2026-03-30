@@ -52,8 +52,8 @@ public class MixinRecipeBookComponent {
                 var entry = known.get(id);
                 if (entry != null) {
                     RecipeDisplay display = entry.display();
-                    // Truyền thêm biến placeAll (Shift-Click) vào hàm
-                    requestIngredientsFromDisplay(display, sm, placeAll);
+                    // TRUYỀN THÊM id VÀO ĐÂY
+                    requestIngredientsFromDisplay(display, id, sm, placeAll);
                 }
             }
 
@@ -63,7 +63,7 @@ public class MixinRecipeBookComponent {
     }
 
     @SuppressWarnings("unchecked")
-    private void requestIngredientsFromDisplay(RecipeDisplay display, StorageManager sm, boolean placeAll) {
+    private void requestIngredientsFromDisplay(RecipeDisplay display, RecipeDisplayId id, StorageManager sm, boolean placeAll) {
         Map<String, Integer> baseCost = new HashMap<>();
 
         try {
@@ -138,9 +138,9 @@ public class MixinRecipeBookComponent {
                 ItemStack stack = inventory.getItem(i);
                 if (stack.isEmpty()) continue;
 
-                String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-                if (baseCost.containsKey(id)) {
-                    playerInv.put(id, playerInv.getOrDefault(id, 0) + stack.getCount());
+                String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+                if (baseCost.containsKey(itemId)) {
+                    playerInv.put(itemId, playerInv.getOrDefault(itemId, 0) + stack.getCount());
                 }
             }
 
@@ -215,6 +215,8 @@ public class MixinRecipeBookComponent {
 
                 // Nếu có đồ cần lấy, bắt đầu quy trình
                 if (addedAny) {
+                    // FIX: Báo cho StorageManager biết công thức cần đặt sau khi lấy xong
+                    sm.setPendingRecipe(id, placeAll);
                     sm.startRetrieval();
                 }
             } else {
@@ -227,7 +229,7 @@ public class MixinRecipeBookComponent {
                     warning.append(missing.getValue()).append("x ").append(cleanName);
                     first = false;
                 }
-                ToastUtils.sendToast("§cMissing Ingredients", warning.toString());
+                com.duox.storagemanager.utils.ToastUtils.sendToast("§cMissing Ingredients", warning.toString());
             }
 
         } catch (Exception e) {

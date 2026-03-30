@@ -61,8 +61,10 @@ public class StorageScreen extends Screen {
     // --- LOGIC ---
     private final StorageManager storageManager;
     private EditBox searchBox;
+
     private ModernButton requestButton;
     private ModernButton autoStashButton;
+    private ModernButton hotbarButton;
     private ModernButton clearCacheButton;
     private ModernButton buildCacheButton;
 
@@ -175,7 +177,6 @@ public class StorageScreen extends Screen {
         this.guiTop = (this.height - GUI_HEIGHT) / 2;
 
         // Search Box
-        // UPDATE: Đặt Search Box nằm gọn giữa Title và Grid
         int padding = 20;
         int searchW = GUI_WIDTH - (padding * 2);
         int searchY = guiTop + 25;
@@ -186,25 +187,15 @@ public class StorageScreen extends Screen {
         this.searchBox.setTextColor(0xFFFFFFFF);
         this.searchBox.setResponder(this::onSearchChanged);
         this.addWidget(this.searchBox);
-        // Request Button
-        // UPDATE: Đặt nút xuống đáy GUI
-        int btnY = guiTop + GUI_HEIGHT - 28;
 
-        this.requestButton = new ModernButton(guiLeft + GUI_WIDTH - 87, btnY, 80, 20, Component.literal("Request"),
-                button -> {
-                    if (!storageManager.isEnabled()) {
-                        storageManager.setEnabled(true);
-                    }
-                    storageManager.startRetrieval();
-                    this.keepModuleOn = true;
-                    Minecraft.getInstance().getSoundManager()
-                            .play(net.minecraft.client.resources.sounds.SimpleSoundInstance
-                                    .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
-                });
-        this.addRenderableWidget(requestButton);
+        // --- BOTTOM BUTTONS ---
+        int btnY = guiTop + GUI_HEIGHT - 28;
+        int bottomPadding = 7;
+        int bottomBtnSpacing = 2;
+        int bottomBtnWidth = (GUI_WIDTH - (bottomPadding * 2) - (bottomBtnSpacing * 2)) / 3;
 
         // AutoStash Button
-        this.autoStashButton = new ModernButton(guiLeft + 7, btnY, 80, 20, Component.literal("AutoStash"), button -> {
+        this.autoStashButton = new ModernButton(guiLeft + bottomPadding, btnY, bottomBtnWidth, 20, Component.literal("AutoStash"), button -> {
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             if (stash != null) {
                 stash.setEnabled(true);
@@ -212,38 +203,74 @@ public class StorageScreen extends Screen {
                         .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
             }
         });
-        this.addRenderableWidget(autoStashButton);
+        this.addRenderableWidget(this.autoStashButton);
 
-        int topButtonsY = guiTop - 20; // Tọa độ Y của nút X hiện tại
-        int closeBtnX = guiLeft + GUI_WIDTH - 20; // Vị trí nút X
-        int buttonSpacing = 2; // Khoảng cách giữa các nút
-        int sideBtnWidth = 40; // Độ rộng nút Build/Clear
-
-        // 1. Nút Close (X) - Đã có sẵn, giữ nguyên tọa độ
-        this.addRenderableWidget(Button.builder(Component.literal("X"), b -> {
-            storageManager.setEnabled(false);
-            this.onClose();
-        }).bounds(closeBtnX, topButtonsY, 20, 20).build());
-
-        // 2. Nút Clear Cache (Nằm bên trái nút X)
-        int clearBtnX = closeBtnX - sideBtnWidth - buttonSpacing;
-        this.addRenderableWidget(Button.builder(Component.literal("Clear"), b -> {
-            // Clear both active and global caches and wipe persistence
-            AutoStash.clearCachesAndStorage(this.minecraft);
-
-            // Refresh visible list immediately
-            refreshItemList();
-
-            ToastUtils.sendToast("§6Storage", "Cache cleared.");
-
-        }).bounds(clearBtnX, topButtonsY, sideBtnWidth, 20).build());
-
-        // 3. Nút Build Cache (Nằm bên trái nút Clear)
-        int buildBtnX = clearBtnX - sideBtnWidth - buttonSpacing;
-        this.addRenderableWidget(Button.builder(Component.literal("Build"), b -> {
+        // Hotbar Toggle Button
+        this.hotbarButton = new ModernButton(guiLeft + bottomPadding + bottomBtnWidth + bottomBtnSpacing, btnY, bottomBtnWidth, 20, getHotbarLabel(), button -> {
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             if (stash != null) {
-                // Tìm và bật setting Rebuild Cache
+                stash.getSettings().stream()
+                        .filter(s -> s.getName().equals("Include Hotbar"))
+                        .findFirst()
+                        .ifPresent(s -> {
+                            BooleanSetting bs = (BooleanSetting) s;
+                            bs.setValue(!bs.getValue()); // Đổi trạng thái
+                            button.setMessage(getHotbarLabel()); // Cập nhật text
+                        });
+            }
+            Minecraft.getInstance().getSoundManager().play(net.minecraft.client.resources.sounds.SimpleSoundInstance.forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        }).setActiveSupplier(() -> {
+            AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+            if (stash != null) {
+                return stash.getSettings().stream()
+                        .filter(s -> s.getName().equals("Include Hotbar"))
+                        .map(s -> ((BooleanSetting) s).getValue())
+                        .findFirst().orElse(false);
+            }
+            return false;
+        });
+        this.addRenderableWidget(this.hotbarButton);
+
+        // Request Button
+        this.requestButton = new ModernButton(guiLeft + bottomPadding + (bottomBtnWidth + bottomBtnSpacing) * 2, btnY, bottomBtnWidth, 20, Component.literal("Request"), button -> {
+            if (!storageManager.isEnabled()) {
+                storageManager.setEnabled(true);
+            }
+            storageManager.startRetrieval();
+            this.keepModuleOn = true;
+            Minecraft.getInstance().getSoundManager()
+                    .play(net.minecraft.client.resources.sounds.SimpleSoundInstance
+                            .forUI(net.minecraft.sounds.SoundEvents.UI_BUTTON_CLICK, 1.0F));
+        });
+        this.addRenderableWidget(this.requestButton);
+
+        // --- TOP RIGHT BUTTONS ---
+        int topButtonsY = guiTop - 20;
+        int closeBtnX = guiLeft + GUI_WIDTH - 20;
+        int buttonSpacing = 2;
+        int sideBtnWidth = 40;
+
+        // 1. Nút Close (X)
+        ModernButton closeBtn = new ModernButton(closeBtnX, topButtonsY, 20, 20, Component.literal("X"), b -> {
+            storageManager.setEnabled(false);
+            this.onClose();
+        });
+        this.addRenderableWidget(closeBtn);
+
+        // 2. Nút Clear Cache
+        int clearBtnX = closeBtnX - sideBtnWidth - buttonSpacing;
+        this.clearCacheButton = new ModernButton(clearBtnX, topButtonsY, sideBtnWidth, 20, Component.literal("Clear"), b -> {
+            AutoStash.clearCachesAndStorage(this.minecraft);
+            refreshItemList();
+            ToastUtils.sendToast("§6Storage", "Cache cleared.");
+        });
+        this.addRenderableWidget(this.clearCacheButton);
+
+        // 3. Nút Build Cache
+        int buildBtnX = clearBtnX - sideBtnWidth - buttonSpacing;
+        this.buildCacheButton = new ModernButton(buildBtnX, topButtonsY, sideBtnWidth, 20, Component.literal("Build"), b -> {
+            AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+            if (stash != null) {
                 stash.getSettings().stream()
                         .filter(s -> s.getName().equalsIgnoreCase("Rebuild Cache Next Run"))
                         .findFirst()
@@ -252,15 +279,28 @@ public class StorageScreen extends Screen {
                 stash.setEnabled(true);
                 ToastUtils.sendToast("§bStorage", "Rebuilding cache...");
             }
-        }).bounds(buildBtnX, topButtonsY, sideBtnWidth, 20).build());
+        });
+        this.addRenderableWidget(this.buildCacheButton);
+
         refreshItemList();
+    }
+
+    private Component getHotbarLabel() {
+        AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+        boolean on = false;
+        if (stash != null) {
+            on = stash.getSettings().stream()
+                    .filter(s -> s.getName().equals("Include Hotbar"))
+                    .map(s -> ((BooleanSetting) s).getValue())
+                    .findFirst().orElse(false);
+        }
+        return Component.literal("Hotbar:" + (on ? "ON" : "OFF")).withStyle(on ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.RED);
     }
 
     @Override
     public void onClose() {
         if (!keepModuleOn) {
             storageManager.clearRequestQueue();
-            //storageManager.setEnabled(false);
         }
         super.onClose();
     }
@@ -273,7 +313,6 @@ public class StorageScreen extends Screen {
             refreshItemList();
             AutoStash.cacheDirty = false; // Đã xử lý xong
         }
-        //this.renderBackground(graphics, mouseX, mouseY, partialTick);
 
         // 1. Main GUI Panel
         graphics.fill(guiLeft, guiTop, guiLeft + GUI_WIDTH, guiTop + GUI_HEIGHT, COLOR_BG_MAIN);
@@ -294,11 +333,11 @@ public class StorageScreen extends Screen {
         graphics.fill(searchX, searchY, searchX + searchBox.getWidth() + 8, searchY + 16, 0xFF000000);
         graphics.renderOutline(searchX, searchY, searchBox.getWidth() + 8, 16, COLOR_BG_BORDER);
         this.searchBox.render(graphics, mouseX, mouseY, partialTick);
+
         // 4. Scrollbar
         renderScrollbar(graphics, mouseX, mouseY);
 
         // 5. Title
-        // UPDATE: Title nằm cao hẳn lên trên
         graphics.drawString(this.font, this.title, guiLeft + 8, guiTop + 10, COLOR_TEXT_TITLE, false);
 
         // 6. Items
@@ -377,15 +416,8 @@ public class StorageScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        System.out.println(
-                "[StorageScreen] mouseScrolled called: scrollX=" + scrollX + ", scrollY=" + scrollY + ", mouse=(" + mouseX + ", " + mouseY + ")");
-
-        // PRIORITY 1: Try to handle as slot scroll (quantity adjustment)
         int gridX = guiLeft + GRID_X_OFFSET;
         int gridY = guiTop + GRID_Y_OFFSET;
-
-        System.out.println("[StorageScreen] Grid coords: gridX=" + gridX + ", gridY=" + gridY);
-        System.out.println("[StorageScreen] Filtered items count: " + filteredItems.size());
 
         boolean handledBySlot = scrollHandler.handleScroll(
                 mouseX, mouseY, scrollX, scrollY,
@@ -393,18 +425,13 @@ public class StorageScreen extends Screen {
                 SLOT_SIZE, GRID_COLS, GRID_ROWS,
                 scrollPosition, filteredItems);
 
-        System.out.println("[StorageScreen] Slot handler result: " + handledBySlot);
-
         if (handledBySlot) {
-            System.out.println("[StorageScreen] Event handled by slot scroll");
             return true; // Slot scroll handled, don't scroll the list
         }
 
         // PRIORITY 2: Fallback to normal list scrolling
-        System.out.println("[StorageScreen] Falling back to list scroll");
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         if (totalRows <= GRID_ROWS) {
-            System.out.println("[StorageScreen] Not enough rows to scroll (" + totalRows + " <= " + GRID_ROWS + ")");
             return false;
         }
 
@@ -415,23 +442,21 @@ public class StorageScreen extends Screen {
             scrollPosition += scrollStep;
         }
         scrollPosition = Mth.clamp(scrollPosition, 0.0f, 1.0f);
-        System.out.println("[StorageScreen] List scrolled to position: " + scrollPosition);
         return true;
     }
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
-// 1. Trích xuất dữ liệu từ event record
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
-        // Check if clicking on scrollbar first
+
         int scrollBarX = guiLeft + GUI_WIDTH - 16;
         int scrollBarY = guiTop + GRID_Y_OFFSET;
         int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
 
         if (button == 0 && mouseX >= scrollBarX && mouseX <= scrollBarX + 10 &&
-            mouseY >= scrollBarY && mouseY <= scrollBarY + scrollBarHeight) {
+                mouseY >= scrollBarY && mouseY <= scrollBarY + scrollBarHeight) {
             int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
             if (totalRows > GRID_ROWS) {
                 isDraggingScrollbar = true;
@@ -477,7 +502,6 @@ public class StorageScreen extends Screen {
             isDraggingScrollbar = false;
             return true;
         }
-        // FIX: Gọi super với event object
         return super.mouseReleased(event);
     }
 
@@ -506,11 +530,13 @@ public class StorageScreen extends Screen {
             }
             return true;
         }
-        return super.mouseDragged(event, dragX, dragY);    }
+        return super.mouseDragged(event, dragX, dragY);
+    }
 
     private void handleClick(ItemEntry entry, int button) {
         int change = 0;
-        boolean isShift = this.minecraft.hasShiftDown();        if (button == 0)
+        boolean isShift = this.minecraft.hasShiftDown();
+        if (button == 0)
             change = 64; // Left
         if (button == 1)
             change = 1; // Right
@@ -563,9 +589,6 @@ public class StorageScreen extends Screen {
                             || e.id.contains(query))
                     .collect(Collectors.toList());
         }
-        // [FIX] ADDED: Safety check.
-        // If the new list is smaller than the old one, clamp the scroll position
-        // so we don't end up looking at empty space.
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         if (totalRows <= GRID_ROWS) {
             scrollPosition = 0.0f;
@@ -575,7 +598,6 @@ public class StorageScreen extends Screen {
     }
 
     private void onSearchChanged(String text) {
-
         filterItems();
         scrollPosition = 0.0f;
     }
@@ -595,14 +617,13 @@ public class StorageScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        // FIX: Sử dụng event.key() thay vì keyCode
         if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
             this.onClose();
             return true;
         }
-        // FIX: Gọi super với event object
         return super.keyPressed(event);
     }
+
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         // Để trống để tắt hoàn toàn background blur
