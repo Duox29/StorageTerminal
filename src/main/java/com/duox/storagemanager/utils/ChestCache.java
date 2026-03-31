@@ -27,15 +27,24 @@ public class ChestCache {
     public static boolean isCacheEmpty() {
         return GLOBAL_BUFFER.isEmpty();
     }
-
-    public static void loadFromDatabase(Minecraft mc) {
+    public static String currentLoadedDimension = "";
+    public static void loadFromDatabase(Minecraft mc, String dimensionId) {
         CacheDatabase db = CacheDatabase.getInstance(mc);
-        Map<String, Map<String, Integer>> loaded = db.loadAll();
+        Map<String, Map<String, Integer>> loaded = db.loadByDimension(dimensionId);
+
+        GLOBAL_BUFFER.clear();
+        ACTIVE_CACHE.clear();
+        currentLoadedDimension = dimensionId; // <--- THÊM DÒNG NÀY
 
         if (loaded != null && !loaded.isEmpty()) {
             GLOBAL_BUFFER.putAll(loaded);
-            DIRTY_FLAG.set(true);
         }
+
+        if (mc.player != null) {
+            refreshActiveCache(mc.player.blockPosition(), 64.0);
+        }
+
+        DIRTY_FLAG.set(true);
     }
 
     public static void clearAll(Minecraft mc) {
@@ -58,15 +67,18 @@ public class ChestCache {
         String key = CacheUtils.posToString(pos);
         GLOBAL_BUFFER.put(key, newData);
 
-        CacheDatabase db = CacheDatabase.getInstance(mc);
-        db.upsertChest(key, newData);
+        // Lấy Dimension ID hiện tại của người chơi
+        String dimensionId = CacheUtils.getDimensionId(mc);
 
-        // FIXED: Removed extra 'pos' argument - only pass center and range
+        CacheDatabase db = CacheDatabase.getInstance(mc);
+        // FIX: Truyền dimensionId vào tham số đầu tiên theo đúng cấu trúc mới
+        db.upsertChest(dimensionId, key, newData);
+
+        // Logic làm mới cache hoạt động trong phạm vi 64 block
         BlockPos center = mc.player != null ? mc.player.blockPosition() : pos;
         refreshActiveCache(center, 64.0);
         DIRTY_FLAG.set(true);
     }
-
     public static void refreshActiveCache(BlockPos center, double range) {
         double rangeSq = range * range;
         Map<String, Map<String, Integer>> newActive = new HashMap<>();
@@ -117,9 +129,12 @@ public class ChestCache {
             }
         }
 
-        DIRTY_FLAG.set(true);
+        String dimensionId = CacheUtils.getDimensionId(mc);
+        // Cập nhật vào DB với Dimension ID
         CacheDatabase db = CacheDatabase.getInstance(mc);
-        db.upsertChest(posKey, contents);
+        db.upsertChest(dimensionId, posKey, contents);
+
+        DIRTY_FLAG.set(true);
     }
 
     public static void markDirty() {

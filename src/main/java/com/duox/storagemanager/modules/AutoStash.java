@@ -7,6 +7,7 @@ import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
+import com.duox.storagemanager.utils.CacheUtils;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.ManualContainerTracker;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -60,6 +61,7 @@ public class AutoStash extends Module {
     private Iterator<Map.Entry<BlockPos, List<Integer>>> stashIterator;
     private Map.Entry<BlockPos, List<Integer>> currentStashEntry;
     private StashPlanner stashPlanner;
+    private String lastDimension = "";
 
     public AutoStash() {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.", Category.UTILITY);
@@ -159,12 +161,9 @@ public class AutoStash extends Module {
     @Override
     public void onTick() {
         if (!validateEnvironment()) return;
-
-        // Background maintenance
+        // Các logic xử lý Interaction và State Machine giữ nguyên
         processManualInteractions();
         syncDirtyFlag();
-
-        // State Machine Execution
         this.currentState = handleState(this.currentState);
     }
 
@@ -252,7 +251,10 @@ public class AutoStash extends Module {
 
     private void startSmartStash() {
         if (ChestCache.isCacheEmpty()) {
-            ChestCache.loadFromDatabase(mc);
+            // FIX: Truyền thêm Dimension ID hiện tại vào hàm nạp dữ liệu
+            String currentDim = CacheUtils.getDimensionId(mc);
+            ChestCache.loadFromDatabase(mc, currentDim);
+
             if (ChestCache.isCacheEmpty()) {
                 sendMessage("§cCache is empty. Please run Rebuild Cache first.");
                 this.setEnabled(false);

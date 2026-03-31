@@ -2,6 +2,8 @@ package com.duox.storagemanager.system;
 
 import com.duox.storagemanager.gui.StorageScreen;
 import com.duox.storagemanager.modules.*;
+import com.duox.storagemanager.utils.CacheUtils;
+import com.duox.storagemanager.utils.ChestCache;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
@@ -89,6 +91,11 @@ public class ModuleManager {
     public void onClientTick(ClientTickEvent.Post event) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player != null) {
+            String currentDim = CacheUtils.getDimensionId(mc);
+            if (!currentDim.equals(ChestCache.currentLoadedDimension)) {
+                ChestCache.loadFromDatabase(mc, currentDim);
+                AutoStash.cacheDirty = true;
+            }
             // Xử lý manual cache update cho AutoStash (luôn chạy ngầm)
             AutoStash.tickManualCacheUpdate();
 

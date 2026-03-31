@@ -546,7 +546,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     private void refreshItemList() {
         allItems.clear();
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
+        // SỬA DÒNG NÀY TƯƠNG TỰ
+        Map<String, Map<String, Integer>> cache = AutoStash.getGlobalBuffer();
         Map<String, Integer> totals = new HashMap<>();
         for (Map<String, Integer> contents : cache.values()) {
             for (Map.Entry<String, Integer> entry : contents.entrySet()) {

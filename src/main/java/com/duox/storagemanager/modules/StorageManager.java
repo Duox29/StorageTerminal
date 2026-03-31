@@ -5,10 +5,7 @@ import com.duox.storagemanager.system.Category;
 import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
-import com.duox.storagemanager.utils.CacheDatabase;
-import com.duox.storagemanager.utils.CacheUtils;
-import com.duox.storagemanager.utils.InventoryUtils;
-import com.duox.storagemanager.utils.ItemSerializer;
+import com.duox.storagemanager.utils.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -207,24 +204,18 @@ public class StorageManager extends Module {
 
     // --- Internal Logic ---
     public void ensureCacheLoaded() {
+        String currentDim = CacheUtils.getDimensionId(mc);
         Map<String, Map<String, Integer>> globalBuffer = AutoStash.getGlobalBuffer();
-        if (globalBuffer.isEmpty()) {
-            CacheDatabase db = CacheDatabase.getInstance(mc);
-            Map<String, Map<String, Integer>> loaded = db.loadAll();
 
-            if (loaded != null && !loaded.isEmpty()) {
-                globalBuffer.putAll(loaded);
-                if (mc.player != null) {
-                    AutoStash autoStash = com.duox.storagemanager.system.ModuleManager.INSTANCE
-                            .getModule(AutoStash.class);
-                    if (autoStash != null) autoStash.forceRefreshActiveCache();
-                }
+        // KIỂM TRA ĐÚNG CHUẨN: Rỗng HOẶC sai dimension
+        if (globalBuffer.isEmpty() || !currentDim.equals(ChestCache.currentLoadedDimension)) {
+            // Sử dụng luôn hàm chuẩn hóa của ChestCache thay vì tự nhét vào globalBuffer
+            com.duox.storagemanager.utils.ChestCache.loadFromDatabase(mc, currentDim);
+            AutoStash.cacheDirty = true;
 
-                AutoStash.cacheDirty = true;
-                sendMessage("§aLoaded cache from file (" + loaded.size() + " chests).");
-            } else {
-                sendMessage("§eCache is empty. You may need to run AutoStash to rebuild the cache first.");
-            }
+            // Lấy lại size để hiển thị log
+            int size = AutoStash.getGlobalBuffer().size();
+            sendMessage("§aLoaded cache for " + currentDim + " (" + size + " chests).");
         }
     }
 

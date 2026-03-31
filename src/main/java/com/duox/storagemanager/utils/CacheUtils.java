@@ -114,4 +114,8 @@ public class CacheUtils {
         String[] parts = s.split(",");
         return new BlockPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
     }
+    public static String getDimensionId(Minecraft mc) {
+        if (mc.level == null) return "unknown";
+        return mc.level.dimension().identifier().toString();
+    }
 }

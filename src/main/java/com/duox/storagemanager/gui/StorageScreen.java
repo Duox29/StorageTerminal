@@ -582,7 +582,8 @@ public class StorageScreen extends Screen {
 
     private void refreshItemList() {
         allItems.clear();
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
+        // SỬA DÒNG NÀY: Dùng GlobalBuffer thay vì ChestCache (ActiveCache)
+        Map<String, Map<String, Integer>> cache = AutoStash.getGlobalBuffer();
         Map<String, Integer> totals = new HashMap<>();
 
         for (Map<String, Integer> contents : cache.values()) {

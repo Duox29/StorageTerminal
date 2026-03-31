@@ -23,22 +23,27 @@ public class CacheDatabase {
     private static final String PRAGMA_WAL = "PRAGMA journal_mode=WAL;";
     private static final String PRAGMA_SYNC = "PRAGMA synchronous=NORMAL;";
     private static final String SQL_CREATE_TABLE = """
-            CREATE TABLE IF NOT EXISTS chest_cache (
-                server_id TEXT NOT NULL,
-                pos TEXT NOT NULL,
-                item_id TEXT NOT NULL,
-                count INTEGER NOT NULL,
-                PRIMARY KEY (server_id, pos, item_id)
-            );
-            """;
+        CREATE TABLE IF NOT EXISTS chest_cache (
+            server_id TEXT NOT NULL,
+            dimension TEXT NOT NULL,
+            pos TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            count INTEGER NOT NULL,
+            PRIMARY KEY (server_id, dimension, pos, item_id)
+        );
+        """;
+    private static final String SQL_SELECT_BY_DIM =
+            "SELECT pos, item_id, count FROM chest_cache WHERE server_id = ? AND dimension = ?";
     private static final String SQL_SELECT_ALL =
             "SELECT pos, item_id, count FROM chest_cache WHERE server_id = ?";
     private static final String SQL_DELETE_BY_POS =
-            "DELETE FROM chest_cache WHERE server_id = ? AND pos = ?";
+            "DELETE FROM chest_cache WHERE server_id = ? AND dimension = ? AND pos = ?";
     private static final String SQL_INSERT =
-            "INSERT INTO chest_cache (server_id, pos, item_id, count) VALUES (?, ?, ?, ?)";
+            "INSERT INTO chest_cache (server_id, dimension, pos, item_id, count) VALUES (?, ?, ?, ?, ?)";
     private static final String SQL_DELETE_BY_SERVER =
             "DELETE FROM chest_cache WHERE server_id = ?";
+    private static final String SQL_DELETE_BY_DIMENSION =
+            "DELETE FROM chest_cache WHERE server_id = ? AND dimension = ?";
 
     private static CacheDatabase instance;
 
@@ -65,6 +70,28 @@ public class CacheDatabase {
         }
         return instance;
     }
+
+    public synchronized Map<String, Map<String, Integer>> loadByDimension(String dimensionId) {
+        Map<String, Map<String, Integer>> result = new HashMap<>();
+        if (!isConnected()) return result;
+
+        try (PreparedStatement ps = connection.prepareStatement(SQL_SELECT_BY_DIM)) {
+            ps.setString(1, serverId);
+            ps.setString(2, dimensionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String pos = rs.getString(1);
+                    String item = rs.getString(2);
+                    int count = rs.getInt(3);
+                    result.computeIfAbsent(pos, k -> new HashMap<>()).put(item, count);
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.error("CacheDatabase: failed to load cache for dimension {}", dimensionId, e);
+        }
+        return result;
+    }
+
 
     private void init() {
         try {
@@ -124,53 +151,44 @@ public class CacheDatabase {
         return result;
     }
 
-    public synchronized void upsertChest(String pos, Map<String, Integer> contents) {
+    public synchronized void upsertChest(String dimensionId, String pos, Map<String, Integer> contents) {
         if (!isConnected()) return;
 
-        boolean autoCommitOriginal = false;
         try {
-            autoCommitOriginal = connection.getAutoCommit();
             connection.setAutoCommit(false);
 
-            // Delete existing entries for this chest
+            // Xóa dữ liệu cũ của rương này tại dimension cụ thể
             try (PreparedStatement del = connection.prepareStatement(SQL_DELETE_BY_POS)) {
                 del.setString(1, serverId);
-                del.setString(2, pos);
+                del.setString(2, dimensionId);
+                del.setString(3, pos);
                 del.executeUpdate();
             }
 
-            // Insert new contents in batches
+            // Chèn dữ liệu mới
             if (!contents.isEmpty()) {
                 try (PreparedStatement ins = connection.prepareStatement(SQL_INSERT)) {
-                    int batchCount = 0;
                     for (Map.Entry<String, Integer> entry : contents.entrySet()) {
                         ins.setString(1, serverId);
-                        ins.setString(2, pos);
-                        ins.setString(3, entry.getKey());
-                        ins.setInt(4, entry.getValue());
+                        ins.setString(2, dimensionId);
+                        ins.setString(3, pos);
+                        ins.setString(4, entry.getKey());
+                        ins.setInt(5, entry.getValue());
                         ins.addBatch();
-
-                        if (++batchCount % BATCH_SIZE == 0) {
-                            ins.executeBatch();
-                        }
                     }
-                    if (batchCount % BATCH_SIZE != 0) {
-                        ins.executeBatch();
-                    }
+                    ins.executeBatch();
                 }
             }
-
             connection.commit();
         } catch (SQLException e) {
-            rollback();
-            LOGGER.error("CacheDatabase: failed to upsert chest {}", pos, e);
-        } finally {
-            restoreAutoCommit(autoCommitOriginal);
+            try { connection.rollback(); } catch (SQLException ignored) {}
+            LOGGER.error("CacheDatabase: failed to upsert chest {} in {}", pos, dimensionId, e);
         }
     }
 
     public synchronized void replaceAll(Map<String, Map<String, Integer>> data) {
         if (!isConnected()) return;
+        String currentDim = CacheUtils.getDimensionId(Minecraft.getInstance()); // Lấy dim hiện tại
         if (data.isEmpty()) {
             clearServer();
             return;
@@ -182,8 +200,9 @@ public class CacheDatabase {
             connection.setAutoCommit(false);
 
             // Clear all existing entries for this server
-            try (PreparedStatement del = connection.prepareStatement(SQL_DELETE_BY_SERVER)) {
+            try (PreparedStatement del = connection.prepareStatement(SQL_DELETE_BY_DIMENSION)) {
                 del.setString(1, serverId);
+                del.setString(2, currentDim); // Xóa chính xác rương ở dimension hiện tại
                 del.executeUpdate();
             }
 
@@ -194,9 +213,10 @@ public class CacheDatabase {
                     String pos = chest.getKey();
                     for (Map.Entry<String, Integer> item : chest.getValue().entrySet()) {
                         ins.setString(1, serverId);
-                        ins.setString(2, pos);
-                        ins.setString(3, item.getKey());
-                        ins.setInt(4, item.getValue());
+                        ins.setString(2, currentDim); // FIX: Thêm dimension vào đúng cột thứ 2
+                        ins.setString(3, pos);         // Tọa độ sang cột 3
+                        ins.setString(4, item.getKey());// Item ID sang cột 4
+                        ins.setInt(5, item.getValue()); // Count sang cột 5
                         ins.addBatch();
 
                         if (++batchCount % BATCH_SIZE == 0) {
