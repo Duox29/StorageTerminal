@@ -32,6 +32,7 @@ public class ChestScoringEngine {
     public BlockPos findBestChest(String itemId, BlockPos playerPos, double maxRange,
                                   Map<String, Map<String, Integer>> cache,
                                   Set<BlockPos> processedChests,
+                                  boolean forceDump,
                                   BiConsumer<String, String> debugLogger) {
         BlockPos bestPos = null;
         double maxScore = -1;
@@ -67,17 +68,18 @@ public class ChestScoringEngine {
             }
 
             // KIỂM TRA MỞ RỘNG: Tìm xem rương có item nào chung Base ID không
-            boolean foundBaseMatch = false;
-            for (String chestKey : contents.keySet()) {
-                if (ItemSerializer.getBaseId(chestKey).equals(baseItemId)) {
-                    foundBaseMatch = true;
-                    break;
+            if (!forceDump) {
+                boolean foundBaseMatch = false;
+                for (String chestKey : contents.keySet()) {
+                    if (ItemSerializer.getBaseId(chestKey).equals(baseItemId)) {
+                        foundBaseMatch = true;
+                        break;
+                    }
                 }
-            }
-
-            if (!foundBaseMatch) {
-                skippedNoItem++;
-                continue;
+                if (!foundBaseMatch) {
+                    skippedNoItem++;
+                    continue;
+                }
             }
 
             double score = calculateScore(pos, contents, itemId, playerPos, debugLogger);

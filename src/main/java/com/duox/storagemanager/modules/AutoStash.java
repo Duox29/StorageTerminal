@@ -62,6 +62,7 @@ public class AutoStash extends Module {
     private Map.Entry<BlockPos, List<Integer>> currentStashEntry;
     private StashPlanner stashPlanner;
     private String lastDimension = "";
+    private boolean isDumpMode = false;
 
     public AutoStash() {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.", Category.UTILITY);
@@ -132,7 +133,8 @@ public class AutoStash extends Module {
         if (silentContainerId != -1 && mc.player != null) {
             closeContainerSafe();
         }
-        resetState();
+        resetState();this.isDumpMode = false;
+
     }
 
     private void resetState() {
@@ -157,7 +159,16 @@ public class AutoStash extends Module {
         );
         stashPlanner = new StashPlanner(engine, this::logDebug);
     }
-
+    public void startDumpAll() {
+        this.isDumpMode = true;
+        if (!this.isEnabled()) {
+            this.setEnabled(true);
+        } else {
+            // Nếu đang bật, reset lại để bắt đầu chu trình dump
+            resetState();
+            onEnable();
+        }
+    }
     @Override
     public void onTick() {
         if (!validateEnvironment()) return;
@@ -251,23 +262,22 @@ public class AutoStash extends Module {
 
     private void startSmartStash() {
         if (ChestCache.isCacheEmpty()) {
-            // FIX: Truyền thêm Dimension ID hiện tại vào hàm nạp dữ liệu
             String currentDim = CacheUtils.getDimensionId(mc);
             ChestCache.loadFromDatabase(mc, currentDim);
-
-            if (ChestCache.isCacheEmpty()) {
-                sendMessage("§cCache is empty. Please run Rebuild Cache first.");
-                this.setEnabled(false);
-                return;
-            }
         }
 
         forceRefreshActiveCache();
-        calculateStashPlan();
+
+        if (isDumpMode) {
+            calculateDumpPlan(); // Hàm lập kế hoạch xả đồ
+        } else {
+            calculateStashPlan();
+        }
 
         if (stashQueue.isEmpty()) {
-            sendMessage("Nothing to stash.");
+            sendMessage(isDumpMode ? "No suitable chests found for dumping." : "Nothing to stash."); // Sửa text ở đây
             this.setEnabled(false);
+            isDumpMode = false;
             return;
         }
 
@@ -286,6 +296,17 @@ public class AutoStash extends Module {
         );
     }
 
+    private void calculateDumpPlan() {
+        // Logic: Duyệt qua từng item trong inv, tìm rương tốt nhất (ưu tiên rương có chỗ trống)
+        // Bạn có thể tùy biến StashPlanner để nhận thêm tham số 'forceDump'
+        stashQueue = stashPlanner.calculateDumpPlan(
+                mc.player,
+                includeHotbar.getValue(),
+                range.getValue(),
+                ChestCache.getActiveCache(),
+                processedChests
+        );
+    }
     private void moveToNextStashTarget() {
         if (stashIterator != null && stashIterator.hasNext()) {
             currentStashEntry = stashIterator.next();

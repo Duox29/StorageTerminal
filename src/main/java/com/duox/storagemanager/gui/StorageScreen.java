@@ -299,6 +299,15 @@ public class StorageScreen extends Screen {
 
             this.addRenderableWidget(catBtn);
         }
+        int dumpBtnX = buildBtnX - sideBtnWidth - buttonSpacing; // Đặt bên trái nút Build
+        ModernButton dumpAllButton = new ModernButton(dumpBtnX, topButtonsY, sideBtnWidth, 20, Component.literal("Dump"), b -> {
+            AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+            if (stash != null) {
+                stash.startDumpAll();
+                ToastUtils.sendToast("§6Storage", "Dumping inventory...");
+            }
+        });
+        this.addRenderableWidget(dumpAllButton);
 
         refreshItemList();
     }
