@@ -4,7 +4,7 @@ package com.duox.storagemanager.gui.widgets;
  * Base class for all setting widgets.
  * Provides common methods for initialization and rendering.
  */
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.input.MouseButtonEvent; // Thêm import này
 
@@ -26,7 +26,7 @@ public abstract class SettingWidget {
     public abstract void init(Consumer<AbstractWidget> widgetConsumer, Runnable onRefresh);
 
     // Hàm vẽ thêm (nếu cần)
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {}
+    public void render(GuiGraphicsExtractor GuiGraphicsExtractor, int mouseX, int mouseY, float partialTick) {}
 
     // FIX: Cập nhật signature để khớp với hệ thống Input Event mới
     public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {

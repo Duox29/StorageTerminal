@@ -3,7 +3,7 @@ package com.duox.storagemanager.utils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 
 public class InventoryUtils {
@@ -12,13 +12,13 @@ public class InventoryUtils {
     /**
      * Sends a click packet to the server via the GameMode controller.
      */
-    public static void sendClickPacket(AbstractContainerMenu menu, int slotId, int button, ClickType clickType) {
+    public static void sendClickPacket(AbstractContainerMenu menu, int slotId, int button, ContainerInput clickType) {
         if (mc.player == null || mc.gameMode == null)
             return;
 
         // FIX: Use GameMode to handle inventory clicks.
         // This automatically handles the 1.21.4 packet signature (HashedStack, swapped arguments) and state ID.
-        mc.gameMode.handleInventoryMouseClick(
+        mc.gameMode.handleContainerInput(
                 menu.containerId,
                 slotId,
                 button,
@@ -58,21 +58,21 @@ public class InventoryUtils {
      * Moves items using Quick Move (Shift + Click).
      */
     public static void quickMove(AbstractContainerMenu menu, int slotId) {
-        sendClickPacket(menu, slotId, 0, ClickType.QUICK_MOVE);
+        sendClickPacket(menu, slotId, 0, ContainerInput.QUICK_MOVE);
     }
 
     /**
      * Pickups items (Left Click).
      */
     public static void pickup(AbstractContainerMenu menu, int slotId) {
-        sendClickPacket(menu, slotId, 0, ClickType.PICKUP);
+        sendClickPacket(menu, slotId, 0, ContainerInput.PICKUP);
     }
 
     /**
      * Drops one item (Right Click).
      */
     public static void dropOne(AbstractContainerMenu menu, int slotId) {
-        sendClickPacket(menu, slotId, 1, ClickType.PICKUP);
+        sendClickPacket(menu, slotId, 1, ContainerInput.PICKUP);
     }
 
     /**

@@ -6,23 +6,19 @@ import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.settings.BooleanSetting;
-import com.duox.storagemanager.utils.CacheDatabase;
 import com.duox.storagemanager.utils.ItemSerializer;
 import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
-import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.CharacterEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -112,7 +108,7 @@ public class StorageScreen extends Screen {
         }
 
         @Override
-        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
             boolean hovered = isHoveredOrFocused();
             boolean active = isActiveSupplier.getAsBoolean();
 
@@ -124,10 +120,10 @@ public class StorageScreen extends Screen {
             // Fill Background
             graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
             // Draw Border
-            graphics.renderOutline(getX(), getY(), width, height, borderColor);
+            graphics.outline(getX(), getY(), width, height, borderColor);
 
             // Draw Text centered
-            graphics.drawCenteredString(font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
+            graphics.centeredText(font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
         }
     }
 
@@ -335,7 +331,7 @@ public class StorageScreen extends Screen {
     // --- RENDER ---
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         if (AutoStash.cacheDirty) {
             refreshItemList();
             AutoStash.cacheDirty = false; // Đã xử lý xong
@@ -343,7 +339,7 @@ public class StorageScreen extends Screen {
 
         // 1. Main GUI Panel
         graphics.fill(guiLeft, guiTop, guiLeft + GUI_WIDTH, guiTop + GUI_HEIGHT, COLOR_BG_MAIN);
-        graphics.renderOutline(guiLeft, guiTop, GUI_WIDTH, GUI_HEIGHT, COLOR_BG_BORDER);
+        graphics.outline(guiLeft, guiTop, GUI_WIDTH, GUI_HEIGHT, COLOR_BG_BORDER);
 
         // 2. Slot Grid Background
         for (int row = 0; row < GRID_ROWS; row++) {
@@ -358,14 +354,14 @@ public class StorageScreen extends Screen {
         int searchX = searchBox.getX() - 4;
         int searchY = searchBox.getY() - 2;
         graphics.fill(searchX, searchY, searchX + searchBox.getWidth() + 8, searchY + 16, 0xFF000000);
-        graphics.renderOutline(searchX, searchY, searchBox.getWidth() + 8, 16, COLOR_BG_BORDER);
-        this.searchBox.render(graphics, mouseX, mouseY, partialTick);
+        graphics.outline(searchX, searchY, searchBox.getWidth() + 8, 16, COLOR_BG_BORDER);
+        this.searchBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         // 4. Scrollbar
         renderScrollbar(graphics, mouseX, mouseY);
 
         // 5. Title
-        graphics.drawString(this.font, this.title, guiLeft + 8, guiTop + 10, COLOR_TEXT_TITLE, false);
+        graphics.text(this.font, this.title, guiLeft + 8, guiTop + 10, COLOR_TEXT_TITLE, false);
 
         // 6. Items
         float itemScale = storageManager.screenScale.getValue().floatValue();
@@ -390,12 +386,12 @@ public class StorageScreen extends Screen {
             graphics.pose().pushMatrix();
             graphics.pose().translate(x + 1, y + 1);
             graphics.pose().scale(itemScale, itemScale);
-            graphics.renderItem(entry.stack, 0, 0);
-            graphics.renderItemDecorations(this.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
+            graphics.item(entry.stack, 0, 0);
+            graphics.itemDecorations(this.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
             graphics.pose().popMatrix();
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
-                graphics.renderOutline(x, y, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
+                graphics.outline(x, y, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
             }
 
             if (isHovered) {
@@ -408,10 +404,10 @@ public class StorageScreen extends Screen {
                 graphics.setTooltipForNextFrame(this.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);            }
         }
 
-        super.render(graphics, mouseX, mouseY, partialTick);
+        super.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 
-    private void renderScrollbar(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderScrollbar(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         int scrollBarX = guiLeft + GUI_WIDTH - 16;
         int scrollBarY = guiTop + GRID_Y_OFFSET;
         int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
@@ -434,7 +430,7 @@ public class StorageScreen extends Screen {
                     && mouseY <= scrollBarY + scrollBarHeight;
             graphics.fill(scrollBarX + 1, thumbY, scrollBarX + 9, thumbY + thumbHeight,
                     isHovered ? COLOR_BTN_HOVER_BG : COLOR_BG_BORDER);
-            graphics.renderOutline(scrollBarX + 1, thumbY, 8, thumbHeight,
+            graphics.outline(scrollBarX + 1, thumbY, 8, thumbHeight,
                     isHovered ? COLOR_BTN_HOVER_BORDER : COLOR_BG_MAIN);
         }
     }
@@ -656,7 +652,7 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractBackground(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         // Để trống để tắt hoàn toàn background blur
     }
 }

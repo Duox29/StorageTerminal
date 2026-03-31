@@ -7,7 +7,7 @@ import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Renderable;
@@ -114,7 +114,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         }
 
         @Override
-        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
             boolean hovered = isHoveredOrFocused();
             boolean active = isActiveSupplier.getAsBoolean();
 
@@ -124,8 +124,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
 
             graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
-            graphics.renderOutline(getX(), getY(), width, height, borderColor);
-            graphics.drawCenteredString(mc.font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
+            graphics.outline(getX(), getY(), width, height, borderColor);
+            graphics.centeredText(mc.font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
         }
     }
 
@@ -272,20 +272,20 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     @Override
-    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+    public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         if (AutoStash.cacheDirty) {
             refreshItemList();
             AutoStash.cacheDirty = false;
         }
 
         graphics.fill(x, y, x + PANEL_WIDTH, y + PANEL_HEIGHT, COLOR_BG_MAIN);
-        graphics.renderOutline(x, y, PANEL_WIDTH, PANEL_HEIGHT, COLOR_BG_BORDER);
+        graphics.outline(x, y, PANEL_WIDTH, PANEL_HEIGHT, COLOR_BG_BORDER);
 
         boolean isHeaderHovered = mouseX >= x && mouseX <= x + PANEL_WIDTH && mouseY >= y && mouseY <= y + HEADER_HEIGHT;
         int headerColor = isHeaderHovered ? COLOR_HEADER_HOVER : COLOR_HEADER;
         graphics.fill(x, y, x + PANEL_WIDTH, y + HEADER_HEIGHT, headerColor);
-        graphics.drawString(mc.font, "Storage Terminal", x + 5, y + 6, 0xFFE0E0E0, false);
-        graphics.hLine(x, x + PANEL_WIDTH - 1, y + HEADER_HEIGHT, COLOR_BG_BORDER);
+        graphics.text(mc.font, "Storage Terminal", x + 5, y + 6, 0xFFE0E0E0, false);
+        graphics.horizontalLine(x, x + PANEL_WIDTH - 1, y + HEADER_HEIGHT, COLOR_BG_BORDER);
 
         for (int row = 0; row < GRID_ROWS; row++) {
             for (int col = 0; col < GRID_COLS; col++) {
@@ -297,19 +297,19 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
         graphics.fill(searchBox.getX() - 2, searchBox.getY() - 2, searchBox.getX() + searchBox.getWidth() + 2, searchBox.getY() + 14, 0xFF000000);
 
-        searchBox.render(graphics, mouseX, mouseY, partialTick);
+        searchBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         // Render 4 Buttons
-        requestButton.render(graphics, mouseX, mouseY, partialTick);
-        autoStashButton.render(graphics, mouseX, mouseY, partialTick);
-        recipeButton.render(graphics, mouseX, mouseY, partialTick);
-        hotbarButton.render(graphics, mouseX, mouseY, partialTick);
+        requestButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        autoStashButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        recipeButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        hotbarButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         renderScrollbar(graphics, mouseX, mouseY);
         renderItems(graphics, mouseX, mouseY);
     }
 
-    private void renderItems(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderItems(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         float itemScale = storageManager.panelScale.getValue().floatValue();
         int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
         int startIndex = (int) (scrollPosition * Math.max(0, totalRows - GRID_ROWS)) * GRID_COLS;
@@ -331,14 +331,14 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             graphics.pose().pushMatrix();
             graphics.pose().translate(sx + 1, sy + 1);
             graphics.pose().scale(itemScale, itemScale);
-            graphics.renderItem(entry.stack, 0, 0);
-            graphics.renderItemDecorations(mc.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
+            graphics.item(entry.stack, 0, 0);
+            graphics.itemDecorations(mc.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
 
             graphics.pose().popMatrix();
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
                 // Sử dụng màu viền xanh tech (Tech Green) giống nút khi được chọn
-                graphics.renderOutline(sx, sy, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
+                graphics.outline(sx, sy, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
             }
 
             if (isHovered) {
@@ -352,7 +352,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         }
     }
 
-    private void renderScrollbar(GuiGraphics graphics, int mouseX, int mouseY) {
+    private void renderScrollbar(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
         int scrollX = x + PANEL_WIDTH - 8;
         int scrollY = y + GRID_Y_OFFSET;
         int scrollH = GRID_ROWS * SLOT_SIZE;

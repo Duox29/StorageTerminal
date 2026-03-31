@@ -3,7 +3,7 @@ package com.duox.storagemanager.gui.widgets;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphics; // Required for renderContents
+import net.minecraft.client.gui.GuiGraphicsExtractor; // Required for renderContents
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.input.InputWithModifiers;
 import net.minecraft.network.chat.Component;
@@ -31,9 +31,9 @@ public class KeybindWidget extends Button {
     // Since 'renderWidget' is final, we must provide the rendering logic here.
     // We use the standard helper methods provided by AbstractButton to draw the background and label.
     @Override
-    protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        this.renderDefaultSprite(graphics); // Draws the button texture
-        this.renderDefaultLabel(graphics.textRendererForWidget(this, GuiGraphics.HoveredTextEffects.NONE)); // Draws the text
+    protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
+        this.extractDefaultSprite(graphics); // Draws the button texture
+        this.extractDefaultLabel(graphics.textRendererForWidget(this, GuiGraphicsExtractor.HoveredTextEffects.NONE)); // Draws the text
     }
 
     private void updateMessage() {

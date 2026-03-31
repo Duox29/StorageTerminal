@@ -271,7 +271,7 @@ public class MixinRecipeBookComponent {
         }
 
         if (slotDisplay instanceof SlotDisplay.ItemStackSlotDisplay itemDisplay) {
-            result.add(itemDisplay.stack());
+            result.add(itemDisplay.stack().create());
         } else if (slotDisplay instanceof SlotDisplay.ItemSlotDisplay itemSlotDisplay) {
             result.add(new ItemStack(itemSlotDisplay.item()));
         } else if (slotDisplay instanceof SlotDisplay.TagSlotDisplay tagDisplay) {
