@@ -1,0 +1,145 @@
+package com.duox.storagemanager.utils;
+
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.ItemStack;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+public class ChestCache {
+    private static final Map<String, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
+    private static final Map<String, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
+    public static final AtomicBoolean DIRTY_FLAG = new AtomicBoolean(false);
+
+    public static Map<String, Map<String, Integer>> getGlobalBuffer() {
+        return GLOBAL_BUFFER;
+    }
+
+    public static Map<String, Map<String, Integer>> getActiveCache() {
+        return ACTIVE_CACHE;
+    }
+
+    public static boolean isCacheEmpty() {
+        return GLOBAL_BUFFER.isEmpty();
+    }
+    public static String currentLoadedDimension = "";
+    public static void loadFromDatabase(Minecraft mc, String dimensionId) {
+        CacheDatabase db = CacheDatabase.getInstance(mc);
+        Map<String, Map<String, Integer>> loaded = db.loadByDimension(dimensionId);
+
+        GLOBAL_BUFFER.clear();
+        ACTIVE_CACHE.clear();
+        currentLoadedDimension = dimensionId; // <--- THÊM DÒNG NÀY
+
+        if (loaded != null && !loaded.isEmpty()) {
+            GLOBAL_BUFFER.putAll(loaded);
+        }
+
+        if (mc.player != null) {
+            refreshActiveCache(mc.player.blockPosition(), 64.0);
+        }
+
+        DIRTY_FLAG.set(true);
+    }
+
+    public static void clearAll(Minecraft mc) {
+        GLOBAL_BUFFER.clear();
+        ACTIVE_CACHE.clear();
+        DIRTY_FLAG.set(true);
+
+        CacheDatabase db = CacheDatabase.getInstance(mc);
+        db.clearServer();
+
+        java.nio.file.Path cacheFile = CacheUtils.getCacheFilePath(mc, "autostash");
+        try {
+            java.nio.file.Files.deleteIfExists(cacheFile);
+        } catch (java.io.IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void updateAndSync(BlockPos pos, Map<String, Integer> newData, Minecraft mc) {
+        String key = CacheUtils.posToString(pos);
+        GLOBAL_BUFFER.put(key, newData);
+
+        // Lấy Dimension ID hiện tại của người chơi
+        String dimensionId = CacheUtils.getDimensionId(mc);
+
+        CacheDatabase db = CacheDatabase.getInstance(mc);
+        // FIX: Truyền dimensionId vào tham số đầu tiên theo đúng cấu trúc mới
+        db.upsertChest(dimensionId, key, newData);
+
+        // Logic làm mới cache hoạt động trong phạm vi 64 block
+        BlockPos center = mc.player != null ? mc.player.blockPosition() : pos;
+        refreshActiveCache(center, 64.0);
+        DIRTY_FLAG.set(true);
+    }
+    public static void refreshActiveCache(BlockPos center, double range) {
+        double rangeSq = range * range;
+        Map<String, Map<String, Integer>> newActive = new HashMap<>();
+
+        GLOBAL_BUFFER.forEach((posStr, contents) -> {
+            BlockPos chestPos = CacheUtils.stringToPos(posStr);
+            if (chestPos.distSqr(center) <= rangeSq) {
+                newActive.put(posStr, contents);
+            }
+        });
+
+        if (!newActive.equals(ACTIVE_CACHE)) {
+            ACTIVE_CACHE.clear();
+            ACTIVE_CACHE.putAll(newActive);
+            DIRTY_FLAG.set(true);
+        }
+    }
+
+    public static void updateFromContainerMenu(BlockPos pos, AbstractContainerMenu menu, Minecraft mc) {
+        int containerSlots = menu.slots.size() - 36; // Player inventory is always last 36 slots
+
+        if (containerSlots <= 0) return;
+
+        Map<String, Integer> contents = new HashMap<>();
+        for (int i = 0; i < containerSlots; i++) {
+            ItemStack stack = menu.getSlot(i).getItem();
+            if (!stack.isEmpty()) {
+                String itemId = ItemSerializer.serialize(stack);
+                contents.put(itemId, contents.getOrDefault(itemId, 0) + stack.getCount());
+            }
+        }
+
+        String posKey = CacheUtils.posToString(pos);
+        GLOBAL_BUFFER.put(posKey, contents);
+
+        // Update active cache if in range
+        if (mc.player != null) {
+            double scanRange = 16.0; // Default
+            com.duox.storagemanager.modules.StorageManager sm =
+                    com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(
+                            com.duox.storagemanager.modules.StorageManager.class);
+            if (sm != null) {
+                scanRange = sm.scanRange.getValue();
+            }
+
+            if (pos.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
+                ACTIVE_CACHE.put(posKey, contents);
+            }
+        }
+
+        String dimensionId = CacheUtils.getDimensionId(mc);
+        // Cập nhật vào DB với Dimension ID
+        CacheDatabase db = CacheDatabase.getInstance(mc);
+        db.upsertChest(dimensionId, posKey, contents);
+
+        DIRTY_FLAG.set(true);
+    }
+
+    public static void markDirty() {
+        DIRTY_FLAG.set(true);
+    }
+
+    public static void clearDirty() {
+        DIRTY_FLAG.set(false);
+    }
+}

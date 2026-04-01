@@ -1,0 +1,17 @@
+{
+	"required": true,
+  "package": "com.duox.storagemanager.mixin",
+  "compatibilityLevel": "JAVA_25",
+	"mixins": [
+      "ClientRecipeBookAccessor",
+      "MixinClientPacketListener",
+      "MixinContainerScreen",
+      "MixinMinecraft",
+      "MixinMultiPlayerGameMode",
+      "MixinPlayer",
+      "MixinRecipeBookComponent"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	}
+}
