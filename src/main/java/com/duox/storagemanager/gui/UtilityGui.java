@@ -1,5 +1,6 @@
 package com.duox.storagemanager.gui;
 
+import com.duox.storagemanager.gui.factory.WidgetFactory;
 import com.duox.storagemanager.gui.widgets.*;
 import com.duox.storagemanager.system.*;
 import com.duox.storagemanager.system.Constants;
@@ -76,14 +77,13 @@ public class UtilityGui extends Screen {
         this.dynamicWidgets.add(keybindWidget);
         startY += 20 + PADDING;
         for (Setting<?> setting : module.getSettings()) {
-            com.duox.storagemanager.gui.widgets.SettingWidget widget =
-                    com.duox.storagemanager.gui.factory.WidgetFactory.create(setting, startX, startY, widgetWidth, 20);
+            SettingWidget widget = WidgetFactory.create(setting, startX, startY, widgetWidth, 20);
 
             if (widget != null) {
                 widget.init(w -> {
                     this.addRenderableWidget(w);
                     this.dynamicWidgets.add(w);
-                }, () -> {});
+                }, () -> this.initSettingsPanel(this.selectedModule));
 
                 this.customRenderWidgets.add(widget);
                 startY += widget.getHeight() + PADDING;
