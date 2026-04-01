@@ -75,7 +75,20 @@ public class UtilityGui extends Screen {
         this.addRenderableWidget(keybindWidget);
         this.dynamicWidgets.add(keybindWidget);
         startY += 20 + PADDING;
+        for (Setting<?> setting : module.getSettings()) {
+            com.duox.storagemanager.gui.widgets.SettingWidget widget =
+                    com.duox.storagemanager.gui.factory.WidgetFactory.create(setting, startX, startY, widgetWidth, 20);
 
+            if (widget != null) {
+                widget.init(w -> {
+                    this.addRenderableWidget(w);
+                    this.dynamicWidgets.add(w);
+                }, () -> {});
+
+                this.customRenderWidgets.add(widget);
+                startY += widget.getHeight() + PADDING;
+            }
+        }
     }
 
     @Override
@@ -114,7 +127,7 @@ public class UtilityGui extends Screen {
                     SIDEBAR_WIDTH + (this.width - SIDEBAR_WIDTH) / 2, this.height / 2, 0xFFAAAAAA);
         }
 
-        super.extractBackground(GuiGraphicsExtractor, mouseX, mouseY, partialTick);
+        super.extractRenderState(GuiGraphicsExtractor, mouseX, mouseY, partialTick);
     }
 
     private void renderModuleList(GuiGraphicsExtractor GuiGraphicsExtractor, int mouseX, int mouseY) {
