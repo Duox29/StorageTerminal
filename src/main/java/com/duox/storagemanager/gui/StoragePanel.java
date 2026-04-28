@@ -14,15 +14,13 @@ import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratableEntry;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
-import net.minecraft.client.input.CharacterEvent;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.MouseButtonEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -113,20 +111,20 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return this;
         }
 
-        @Override
-        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            boolean hovered = isHoveredOrFocused();
-            boolean active = isActiveSupplier.getAsBoolean();
-
-            int bgColor = hovered ? COLOR_BTN_HOVER_BG : COLOR_BTN_NORMAL_BG;
-            int borderColor = active ? COLOR_BTN_ACTIVE_BORDER
-                    : (hovered ? COLOR_BTN_HOVER_BORDER : COLOR_BTN_NORMAL_BORDER);
-            int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
-
-            graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
-            graphics.renderOutline(getX(), getY(), width, height, borderColor);
-            graphics.drawCenteredString(mc.font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
-        }
+//        @Override
+//        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+//            boolean hovered = isHoveredOrFocused();
+//            boolean active = isActiveSupplier.getAsBoolean();
+//
+//            int bgColor = hovered ? COLOR_BTN_HOVER_BG : COLOR_BTN_NORMAL_BG;
+//            int borderColor = active ? COLOR_BTN_ACTIVE_BORDER
+//                    : (hovered ? COLOR_BTN_HOVER_BORDER : COLOR_BTN_NORMAL_BORDER);
+//            int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
+//
+//            graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
+//            graphics.renderOutline(getX(), getY(), width, height, borderColor);
+//            graphics.drawCenteredString(mc.font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
+//        }
     }
 
     public StoragePanel(StorageManager manager, int startX, int startY) {
@@ -328,13 +326,13 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             if (isHovered) {
                 graphics.fill(sx, sy, sx + SLOT_SIZE - 1, sy + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
             }
-            graphics.pose().pushMatrix();
-            graphics.pose().translate(sx + 1, sy + 1);
-            graphics.pose().scale(itemScale, itemScale);
+            graphics.pose().pushPose();
+            graphics.pose().translate(sx + 1, sy + 1, 0);
+            graphics.pose().scale(itemScale, itemScale, 1.0f);
             graphics.renderItem(entry.stack, 0, 0);
             graphics.renderItemDecorations(mc.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
 
-            graphics.pose().popMatrix();
+            graphics.pose().popPose();
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
                 // Sử dụng màu viền xanh tech (Tech Green) giống nút khi được chọn
@@ -347,7 +345,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 tooltip.addAll(entry.stack.getTooltipLines(context, mc.player, TooltipFlag.NORMAL));
                 tooltip.add(Component.literal("§7Stored: §f" + entry.totalCount));
                 if (queued > 0) tooltip.add(Component.literal("§eRequesting: " + queued));
-                graphics.setTooltipForNextFrame(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
+                graphics.renderTooltip(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
             }
         }
     }
@@ -369,10 +367,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
-        double mouseX = event.x();
-        double mouseY = event.y();
-        int button = event.button();
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
 
         if (!isMouseOver(mouseX, mouseY)) return false;
 
@@ -400,21 +395,23 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        if (searchBox.mouseClicked(event, false)) { setFocusedListener(searchBox); return true; }
+        if (searchBox.mouseClicked(mouseX, mouseY, button)) {
+            setFocusedListener(searchBox);
+            return true;
+        }
 
-        // Cập nhật lại danh sách nút nhận Click
-        if (requestButton.mouseClicked(event, false)) return true;
-        if (autoStashButton.mouseClicked(event, false)) return true;
-        if (recipeButton.mouseClicked(event, false)) return true;
-        if (hotbarButton.mouseClicked(event, false)) return true;
+        // Cập nhật lại danh sách nút nhận ClickmouseX, mouseY, button
+        if (requestButton.mouseClicked(mouseX, mouseY, button)) return true;
+        if (autoStashButton.mouseClicked(mouseX, mouseY, button)) return true;
+        if (recipeButton.mouseClicked(mouseX, mouseY, button)) return true;
+        if (hotbarButton.mouseClicked(mouseX, mouseY, button)) return true;
 
         handleGridClick(mouseX, mouseY, button);
         return true;
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent event) {
-        int button = event.button();
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (isDraggingScrollbar && button == 0) {
             isDraggingScrollbar = false;
             widgetFocused = false;
@@ -429,15 +426,15 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        return searchBox.mouseReleased(event) || requestButton.mouseReleased(event) || autoStashButton.mouseReleased(event) || recipeButton.mouseReleased(event) || hotbarButton.mouseReleased(event);
+        return searchBox.mouseReleased(mouseX, mouseY, button) ||
+                requestButton.mouseReleased(mouseX, mouseY, button) ||
+                autoStashButton.mouseReleased(mouseX, mouseY, button) ||
+                recipeButton.mouseReleased(mouseX, mouseY, button) ||
+                hotbarButton.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        int button = event.button();
-        double mouseX = event.x();
-        double mouseY = event.y();
-
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (isDraggingScrollbar && button == 0) {
             int scrollH = GRID_ROWS * SLOT_SIZE;
             int totalRows = (int) Math.ceil((double) filteredItems.size() / GRID_COLS);
@@ -463,7 +460,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        return searchBox.mouseDragged(event, dragX, dragY);
+        return searchBox.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     @Override
@@ -486,20 +483,19 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (searchBox.isFocused()) return searchBox.keyPressed(event);
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (searchBox.isFocused()) return searchBox.keyPressed(keyCode, scanCode, modifiers);
         return false;
     }
 
     @Override
-    public boolean charTyped(CharacterEvent event) {
-        if (searchBox.isFocused()) return searchBox.charTyped(event);
+    public boolean charTyped(char codePoint, int modifiers) {
+        if (searchBox.isFocused()) return searchBox.charTyped(codePoint, modifiers);
         return false;
     }
 
     @Override
     public boolean isMouseOver(double mouseX, double mouseY) {
-        // FIX: Nâng vùng nhận diện chuột lên thêm 25px để bao gồm cả các nút ở trên cùng (y - 25)
         return mouseX >= x && mouseX <= x + PANEL_WIDTH && mouseY >= y - 25 && mouseY <= y + PANEL_HEIGHT;
     }
 
@@ -532,7 +528,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (index >= 0 && index < filteredItems.size()) {
             ItemEntry entry = filteredItems.get(index);
             int change = (button == 0) ? 64 : 1;
-            if (mc.hasShiftDown()) change = -change;
+            if (Screen.hasShiftDown()) change = -change;
 
             int current = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             int target = Math.max(0, Math.min(entry.totalCount, current + change));

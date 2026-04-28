@@ -20,9 +20,6 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import org.lwjgl.glfw.GLFW;
-import net.minecraft.client.input.MouseButtonEvent;
-import net.minecraft.client.input.KeyEvent;
-import net.minecraft.client.input.CharacterEvent;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -111,24 +108,24 @@ public class StorageScreen extends Screen {
             return this;
         }
 
-        @Override
-        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-            boolean hovered = isHoveredOrFocused();
-            boolean active = isActiveSupplier.getAsBoolean();
-
-            int bgColor = hovered ? COLOR_BTN_HOVER_BG : COLOR_BTN_NORMAL_BG;
-            int borderColor = active ? COLOR_BTN_ACTIVE_BORDER
-                    : (hovered ? COLOR_BTN_HOVER_BORDER : COLOR_BTN_NORMAL_BORDER);
-            int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
-
-            // Fill Background
-            graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
-            // Draw Border
-            graphics.renderOutline(getX(), getY(), width, height, borderColor);
-
-            // Draw Text centered
-            graphics.drawCenteredString(font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
-        }
+//        @Override
+//        protected void renderContents(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+//            boolean hovered = isHoveredOrFocused();
+//            boolean active = isActiveSupplier.getAsBoolean();
+//
+//            int bgColor = hovered ? COLOR_BTN_HOVER_BG : COLOR_BTN_NORMAL_BG;
+//            int borderColor = active ? COLOR_BTN_ACTIVE_BORDER
+//                    : (hovered ? COLOR_BTN_HOVER_BORDER : COLOR_BTN_NORMAL_BORDER);
+//            int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
+//
+//            // Fill Background
+//            graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
+//            // Draw Border
+//            graphics.renderOutline(getX(), getY(), width, height, borderColor);
+//
+//            // Draw Text centered
+//            graphics.drawCenteredString(font, getMessage(), getX() + width / 2, getY() + (height - 8) / 2, textColor);
+//        }
     }
 
     public StorageScreen(StorageManager manager) {
@@ -387,12 +384,12 @@ public class StorageScreen extends Screen {
             if (isHovered) {
                 graphics.fill(x, y, x + SLOT_SIZE - 1, y + SLOT_SIZE - 1, COLOR_SLOT_HIGHLIGHT);
             }
-            graphics.pose().pushMatrix();
-            graphics.pose().translate(x + 1, y + 1);
-            graphics.pose().scale(itemScale, itemScale);
+            graphics.pose().pushPose();
+            graphics.pose().translate(x + 1, y + 1, 0);
+            graphics.pose().scale(itemScale, itemScale, 1.0f);
             graphics.renderItem(entry.stack, 0, 0);
             graphics.renderItemDecorations(this.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
-            graphics.pose().popMatrix();
+            graphics.pose().popPose();
             int queued = storageManager.getRequestQueue().getOrDefault(entry.id, 0);
             if (queued > 0) {
                 graphics.renderOutline(x, y, SLOT_SIZE - 1, SLOT_SIZE - 1, COLOR_BTN_ACTIVE_BORDER);
@@ -405,7 +402,7 @@ public class StorageScreen extends Screen {
                     tooltip.add(Component.literal("§eRequesting: " + queued));
                 }
                 tooltip.add(Component.literal("§8[L-Click: +64 | R-Click: +1 | Shift: Remove]"));
-                graphics.setTooltipForNextFrame(this.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);            }
+                graphics.renderTooltip(this.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);            }
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -473,11 +470,7 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
-        double mouseX = event.x();
-        double mouseY = event.y();
-        int button = event.button();
-
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int scrollBarX = guiLeft + GUI_WIDTH - 16;
         int scrollBarY = guiTop + GRID_Y_OFFSET;
         int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
@@ -493,7 +486,7 @@ public class StorageScreen extends Screen {
             }
         }
 
-        if (super.mouseClicked(event, isFocused))
+        if (super.mouseClicked(mouseX, mouseY, button))
             return true;
 
         int startX = guiLeft + GRID_X_OFFSET;
@@ -522,20 +515,16 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(MouseButtonEvent event) {
-        int button = event.button();
-
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
         if (isDraggingScrollbar && button == 0) {
             isDraggingScrollbar = false;
             return true;
         }
-        return super.mouseReleased(event);
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     @Override
-    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        int button = event.button();
-        double mouseY = event.y();
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
         if (isDraggingScrollbar && button == 0) {
             int scrollBarY = guiTop + GRID_Y_OFFSET;
             int scrollBarHeight = GRID_ROWS * SLOT_SIZE;
@@ -557,12 +546,12 @@ public class StorageScreen extends Screen {
             }
             return true;
         }
-        return super.mouseDragged(event, dragX, dragY);
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
 
     private void handleClick(ItemEntry entry, int button) {
         int change = 0;
-        boolean isShift = this.minecraft.hasShiftDown();
+        boolean isShift = Screen.hasShiftDown();
         if (button == 0)
             change = 64; // Left
         if (button == 1)
@@ -647,12 +636,12 @@ public class StorageScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (keyCode == GLFW.GLFW_KEY_ESCAPE) {
             this.onClose();
             return true;
         }
-        return super.keyPressed(event);
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override

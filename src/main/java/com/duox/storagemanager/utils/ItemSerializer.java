@@ -8,7 +8,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
 import net.minecraft.nbt.TagParser;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -53,7 +53,7 @@ public class ItemSerializer {
                 HolderLookup.Provider provider = mc.level.registryAccess();
 
                 // Dùng chính xác tên hàm lấy từ bảng mapping của bạn
-                CompoundTag tag = TagParser.parseCompoundFully(key);
+                CompoundTag tag = TagParser.parseTag(key);
                 tag.putInt("count", 1);
 
                 DataResult<ItemStack> result = ItemStack.CODEC.parse(provider.createSerializationContext(NbtOps.INSTANCE), tag);
@@ -63,7 +63,7 @@ public class ItemSerializer {
                 return ItemStack.EMPTY;
             }
         } else {
-            Identifier location = Identifier.parse(key);
+            ResourceLocation location = ResourceLocation.parse(key);
             Item item = BuiltInRegistries.ITEM.getOptional(location).orElse(Items.AIR);
             return new ItemStack(item);
         }

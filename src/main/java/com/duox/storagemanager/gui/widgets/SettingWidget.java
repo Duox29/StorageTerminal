@@ -6,7 +6,6 @@ package com.duox.storagemanager.gui.widgets;
  */
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.AbstractWidget;
-import net.minecraft.client.input.MouseButtonEvent; // Thêm import này
 
 import java.util.function.Consumer;
 
@@ -29,7 +28,5 @@ public abstract class SettingWidget {
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {}
 
     // FIX: Cập nhật signature để khớp với hệ thống Input Event mới
-    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
-        return false;
-    }
+    public boolean mouseClicked(double mouseX, double mouseY, int button) { return false; }
 }

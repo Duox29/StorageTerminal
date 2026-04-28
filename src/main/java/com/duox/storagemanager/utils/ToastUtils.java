@@ -2,7 +2,7 @@ package com.duox.storagemanager.utils;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
-import net.minecraft.client.gui.components.toasts.ToastManager;
+import net.minecraft.client.gui.components.toasts.ToastComponent;
 import net.minecraft.network.chat.Component;
 
 public class ToastUtils {
@@ -20,10 +20,10 @@ public class ToastUtils {
         Minecraft mc = Minecraft.getInstance();
 
         // SỬA KIỂU DỮ LIỆU Ở ĐÂY THÀNH ToastManager
-        ToastManager toastManager = mc.getToastManager();
+        ToastComponent toastComponent = mc.getToasts();
 
-        if (toastManager != null) {
-            SystemToast.add(toastManager, SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
+        if (toastComponent != null) {
+            SystemToast.add(toastComponent, SystemToast.SystemToastId.PERIODIC_NOTIFICATION,
                     Component.literal(title), message);
         }
     }

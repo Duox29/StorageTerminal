@@ -86,7 +86,7 @@ public class SlotScrollHandler<T> {
 
         int currentQueued = storageManager.getRequestQueue().getOrDefault(itemId, 0);
         // FIX: Use the Minecraft instance (mc) instead of the static Screen method
-        boolean shiftHeld = mc.hasShiftDown();
+        boolean shiftHeld = Screen.hasShiftDown();
 
         System.out.println("  -> Current queued: " + currentQueued + ", Shift: " + shiftHeld);
 

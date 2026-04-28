@@ -8,12 +8,11 @@ import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.HitResult;
@@ -33,7 +32,7 @@ public class StorageManager extends Module {
     private Map.Entry<BlockPos, Map<String, Integer>> currentTargetEntry;
 
     // --- AUTO CRAFTING VARIABLES ---
-    private RecipeDisplayId pendingRecipeId = null;
+    private ResourceLocation pendingRecipeId = null;
     private boolean pendingRecipePlaceAll = false;
 
     // State Machine
@@ -159,7 +158,7 @@ public class StorageManager extends Module {
         return requestQueue;
     }
 
-    public void setPendingRecipe(RecipeDisplayId id, boolean placeAll) {
+    public void setPendingRecipe(ResourceLocation id, boolean placeAll) {
         this.pendingRecipeId = id;
         this.pendingRecipePlaceAll = placeAll;
     }
@@ -393,8 +392,13 @@ public class StorageManager extends Module {
     private void handleWaitingForReturn() {
         if (mc.screen instanceof CraftingScreen) {
             if (pendingRecipeId != null && mc.player != null) {
-                mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, pendingRecipeId, pendingRecipePlaceAll);
-                pendingRecipeId = null;
+                mc.level.getRecipeManager().byKey(pendingRecipeId).ifPresent(recipeHolder -> {
+                    mc.gameMode.handlePlaceRecipe(
+                            mc.player.containerMenu.containerId,
+                            recipeHolder,
+                            pendingRecipePlaceAll
+                    );
+                });                pendingRecipeId = null;
             }
             currentState = State.IDLE;
             // Đã xóa lệnh tắt module ở đây

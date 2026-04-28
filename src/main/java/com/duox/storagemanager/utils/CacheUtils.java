@@ -116,6 +116,6 @@ public class CacheUtils {
     }
     public static String getDimensionId(Minecraft mc) {
         if (mc.level == null) return "unknown";
-        return mc.level.dimension().identifier().toString();
+        return mc.level.dimension().location().toString();
     }
 }

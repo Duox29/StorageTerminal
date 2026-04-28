@@ -2,6 +2,7 @@ package com.duox.storagemanager.logic;
 
 import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
@@ -178,7 +179,7 @@ public class ChestScoringEngine {
         try {
             // FIX BOM NỔ CHẬM: Phải lấy base ID trước khi Parse, nếu không Parser sẽ bị Crash NBT
             String baseId = ItemSerializer.getBaseId(itemId);
-            net.minecraft.resources.Identifier location = net.minecraft.resources.Identifier.parse(baseId);
+            ResourceLocation location = ResourceLocation.parse(baseId);
             Item item = BuiltInRegistries.ITEM.getOptional(location).orElse(null);
             if (item != null) {
                 return item.getDefaultMaxStackSize();
