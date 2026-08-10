@@ -75,7 +75,7 @@ public class StorageManager {
     @SubscribeEvent
     public void onKeyInput(InputEvent.Key event) {
         if (OPEN_GUI_KEY.consumeClick()) {
-            Minecraft.getInstance().setScreen(new UtilityGui());
+            Minecraft.getInstance().gui.setScreen(new UtilityGui());
         }
     }
 }

@@ -87,7 +87,7 @@ public abstract class Module {
                     .withStyle(net.minecraft.ChatFormatting.WHITE)
                     .append(net.minecraft.network.chat.Component.literal(this.enabled ? "Enabled" : "Disabled")
                             .withStyle(this.enabled ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.RED));
-            mc.gui.setOverlayMessage(message, false);
+            mc.gui.hud.setOverlayMessage(message, false);
         }
     }
 

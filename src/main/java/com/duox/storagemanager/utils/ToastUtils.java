@@ -20,7 +20,7 @@ public class ToastUtils {
         Minecraft mc = Minecraft.getInstance();
 
         // SỬA KIỂU DỮ LIỆU Ở ĐÂY THÀNH ToastManager
-        ToastManager toastManager = mc.getToastManager();
+        ToastManager toastManager = mc.gui.toastManager();
 
         if (toastManager != null) {
             SystemToast.add(toastManager, SystemToast.SystemToastId.PERIODIC_NOTIFICATION,

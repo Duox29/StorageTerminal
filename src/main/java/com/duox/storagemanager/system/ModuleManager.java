@@ -124,7 +124,7 @@ public class ModuleManager {
                                 toggledModules.add(sm);
                             } else {
                                 // Nếu module đã bật sẵn, chỉ việc mở lại GUI mà không toggle trạng thái
-                                mc.setScreen(new StorageScreen(sm));
+                                mc.gui.setScreen(new StorageScreen(sm));
                             }
                         } else {
                             // Các module khác vẫn toggle bật/tắt bình thường
@@ -145,7 +145,7 @@ public class ModuleManager {
                     message.append(net.minecraft.network.chat.Component.literal(m.getName())
                             .withStyle(m.isEnabled() ? net.minecraft.ChatFormatting.GREEN : net.minecraft.ChatFormatting.RED));
                 }
-                mc.gui.setOverlayMessage(message, false);
+                mc.gui.hud.setOverlayMessage(message, false);
             }
 
             // Chạy logic tick cho các module đang bật

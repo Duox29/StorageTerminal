@@ -97,14 +97,14 @@ public class StorageManager extends Module {
         if (mc.player == null)
             return;
 
-        if (mc.screen == null) {
-            mc.setScreen(new StorageScreen(this));
+        if (mc.gui.screen() == null) {
+            mc.gui.setScreen(new StorageScreen(this));
         }
 
         if (!requestQueue.isEmpty()) {
             startRetrieval();
         } else {
-            mc.setScreen(new StorageScreen(this));
+            mc.gui.setScreen(new StorageScreen(this));
         }
     }
 
@@ -187,7 +187,7 @@ public class StorageManager extends Module {
     }
 
     private void captureCraftingTableContext() {
-        if (mc.screen instanceof CraftingScreen) {
+        if (mc.gui.screen() instanceof CraftingScreen) {
             HitResult hit = mc.hitResult;
             if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
                 BlockHitResult blockHit = (BlockHitResult) hit;
@@ -391,7 +391,7 @@ public class StorageManager extends Module {
     }
 
     private void handleWaitingForReturn() {
-        if (mc.screen instanceof CraftingScreen) {
+        if (mc.gui.screen() instanceof CraftingScreen) {
             if (pendingRecipeId != null && mc.player != null) {
                 mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, pendingRecipeId, pendingRecipePlaceAll);
                 pendingRecipeId = null;
