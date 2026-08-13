@@ -5,6 +5,7 @@ import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
+import net.minecraft.world.inventory.MenuType;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -27,8 +28,13 @@ public class MixinClientPacketListener {
         }
 
         StorageManager storageManager = ModuleManager.INSTANCE.getModule(StorageManager.class);
-        if (storageManager != null && storageManager.isEnabled() && storageManager.isSilentMode()) {
-            storageManager.onSilentContainerOpen(packet.getContainerId(), packet.getType());
+        if (storageManager != null && storageManager.isEnabled()) {
+            if (packet.getType() == MenuType.CRAFTING) {
+                // Server-confirmed crafting table: signal recipe placement readiness.
+                storageManager.onCraftingContainerOpened(packet.getContainerId());
+            } else if (storageManager.isSilentMode()) {
+                storageManager.onSilentContainerOpen(packet.getContainerId(), packet.getType());
+            }
         }
     }
 }

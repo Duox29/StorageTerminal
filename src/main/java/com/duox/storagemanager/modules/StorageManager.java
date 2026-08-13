@@ -20,6 +20,7 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.client.gui.screens.inventory.CraftingScreen;
+import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.level.block.CraftingTableBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
@@ -43,13 +44,15 @@ public class StorageManager extends Module {
         OPENING_CHEST,
         WAITING_FOR_OPEN,
         WITHDRAWING,
-        CLOSING_CHEST
+        CLOSING_CHEST,
+        WAITING_FOR_CRAFTING
     }
 
     private static final int CHEST_OPEN_TIMEOUT = 11;
     private static final int PARTIAL_MOVE_DELAY = 0;
     private static final int FULL_MOVE_DELAY = 0;
     private static final int PLAYER_INVENTORY_SIZE = 36;
+    private static final int RECIPE_PLACE_TIMEOUT = 40;
 
     private State currentState = State.IDLE;
     private BlockPos currentTarget = null;
@@ -57,6 +60,12 @@ public class StorageManager extends Module {
     private int waitTimer = 0;
     private int silentContainerId = -1;
     private boolean containerReady = false;
+
+    // Pending recipe placement (deferred until crafting container is confirmed)
+    private RecipeHolder<?> pendingRecipe = null;
+    private boolean pendingRecipePlaceAll = false;
+    private int craftingContainerId = -1;
+    private boolean craftingContainerReady = false;
 
     public final NumberSetting panelX = new NumberSetting("Panel X", 300, 0, 2560, 1);
     public final NumberSetting panelY = new NumberSetting("Panel Y", 100, 0, 1440, 1);
@@ -136,6 +145,9 @@ public class StorageManager extends Module {
                 break;
             case CLOSING_CHEST:
                 closeSilent();
+                break;
+            case WAITING_FOR_CRAFTING:
+                waitForCraftingContainer();
                 break;
             case IDLE:
                 break;
@@ -225,6 +237,10 @@ public class StorageManager extends Module {
         returnToContainerPos = null;
         silentContainerId = -1;
         containerReady = false;
+        pendingRecipe = null;
+        pendingRecipePlaceAll = false;
+        craftingContainerId = -1;
+        craftingContainerReady = false;
         retrievalPlan.clear();
         retrievalIterator = null;
         currentTargetEntry = null;
@@ -335,7 +351,16 @@ public class StorageManager extends Module {
                     openReturnContainer();
                     returnToContainerPos = null;
                 }
-                currentState = State.IDLE;
+                if (pendingRecipe != null) {
+                    // Re-open the crafting table was triggered above; wait for the
+                    // server-confirmed crafting container before placing the recipe.
+                    craftingContainerId = -1;
+                    craftingContainerReady = false;
+                    currentState = State.WAITING_FOR_CRAFTING;
+                    waitTimer = RECIPE_PLACE_TIMEOUT;
+                } else {
+                    currentState = State.IDLE;
+                }
                 // this.setEnabled(false);
             }
         }
@@ -372,6 +397,24 @@ public class StorageManager extends Module {
     public void onSilentContainerOpen(int containerId, MenuType<?> menuType) {
         this.silentContainerId = containerId;
         this.containerReady = true;
+    }
+
+    /**
+     * Stores a recipe placement that was deferred until storage retrieval
+     * completes and the crafting container is confirmed by the server.
+     */
+    public void setPendingRecipe(RecipeHolder<?> recipe, boolean placeAll) {
+        this.pendingRecipe = recipe;
+        this.pendingRecipePlaceAll = placeAll;
+    }
+
+    /**
+     * Called when the server confirms a crafting table menu was opened. This is
+     * the authoritative signal that we can safely re-send recipe placement.
+     */
+    public void onCraftingContainerOpened(int containerId) {
+        this.craftingContainerId = containerId;
+        this.craftingContainerReady = true;
     }
 
     public boolean isSilentMode() {
@@ -504,6 +547,56 @@ public class StorageManager extends Module {
 
         mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
         mc.player.swing(InteractionHand.MAIN_HAND);
+    }
+
+    /**
+     * Waits for the server to confirm the crafting table container is open before
+     * re-sending the deferred recipe placement. A timeout is kept only as a
+     * fallback; the primary synchronization is the packet-driven confirmation.
+     */
+    private void waitForCraftingContainer() {
+        if (craftingContainerReady && craftingContainerId != -1) {
+            placePendingRecipe();
+            return;
+        }
+
+        waitTimer--;
+        if (waitTimer <= 0) {
+            // Fallback: only attempt placement if a crafting menu is actually open.
+            if (mc.player != null
+                    && mc.player.containerMenu != null
+                    && mc.player.containerMenu != mc.player.inventoryMenu
+                    && mc.player.containerMenu.getType() == MenuType.CRAFTING) {
+                placePendingRecipe(mc.player.containerMenu.containerId);
+            } else {
+                clearPendingRecipe();
+                currentState = State.IDLE;
+            }
+        }
+    }
+
+    private void placePendingRecipe() {
+        if (craftingContainerId != -1) {
+            placePendingRecipe(craftingContainerId);
+        } else {
+            clearPendingRecipe();
+            currentState = State.IDLE;
+        }
+    }
+
+    private void placePendingRecipe(int containerId) {
+        if (pendingRecipe != null && mc.player != null) {
+            mc.gameMode.handlePlaceRecipe(containerId, pendingRecipe, pendingRecipePlaceAll);
+        }
+        clearPendingRecipe();
+        currentState = State.IDLE;
+    }
+
+    private void clearPendingRecipe() {
+        pendingRecipe = null;
+        pendingRecipePlaceAll = false;
+        craftingContainerId = -1;
+        craftingContainerReady = false;
     }
 
     private void sendMessage(String message) {

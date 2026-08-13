@@ -26,21 +26,32 @@ public class MixinRecipeBookComponent {
 
     @Redirect(method = "mouseClicked", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;handlePlaceRecipe(ILnet/minecraft/world/item/crafting/RecipeHolder;Z)V"))
     private void redirectHandlePlaceRecipe(MultiPlayerGameMode instance, int containerId, RecipeHolder<?> recipeHolder, boolean placeAll) {
-        // 1. Run the original logic (send packet to server)
-        instance.handlePlaceRecipe(containerId, recipeHolder, placeAll);
-
-        // 2. StorageManager Logic
         try {
             StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
             if (sm != null && sm.isEnabled() && sm.autoRequestRecipe.getValue()) {
-                requestIngredients(recipeHolder, sm);
+                // If ingredients are missing and can be retrieved from storage, defer
+                // the vanilla placement so it is not sent before the items arrive and
+                // the crafting container is server-confirmed.
+                if (requestIngredients(recipeHolder, sm)) {
+                    sm.setPendingRecipe(recipeHolder, placeAll);
+                    return;
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        // All ingredients present (or no retrieval possible): keep vanilla behavior.
+        instance.handlePlaceRecipe(containerId, recipeHolder, placeAll);
     }
 
-    private void requestIngredients(RecipeHolder<?> recipeHolder, StorageManager sm) {
+    /**
+     * Computes missing ingredients, adds them to the retrieval queue, and starts
+     * retrieval if any can be pulled from storage.
+     *
+     * @return true if retrieval was started (vanilla placement should be deferred)
+     */
+    private boolean requestIngredients(RecipeHolder<?> recipeHolder, StorageManager sm) {
         Map<String, Integer> needed = new HashMap<>();
 
         // 1. Calculate ingredients needed for 1 craft
@@ -88,19 +99,23 @@ public class MixinRecipeBookComponent {
         }
 
         // 3. Add to Request Queue
-        if (!needed.isEmpty()) {
-            boolean added = false;
-            for (Map.Entry<String, Integer> entry : needed.entrySet()) {
-                // Only request if we know we have it in storage (cache check)
-                if (hasInCache(entry.getKey())) {
-                    sm.addToRequestQueue(entry.getKey(), entry.getValue());
-                    added = true;
-                }
-            }
-            if (added) {
-                sm.startRetrieval();
+        if (needed.isEmpty()) {
+            return false;
+        }
+
+        boolean added = false;
+        for (Map.Entry<String, Integer> entry : needed.entrySet()) {
+            // Only request if we know we have it in storage (cache check)
+            if (hasInCache(entry.getKey())) {
+                sm.addToRequestQueue(entry.getKey(), entry.getValue());
+                added = true;
             }
         }
+        if (added) {
+            sm.startRetrieval();
+            return true;
+        }
+        return false;
     }
 
     private boolean hasInCache(String itemId) {
