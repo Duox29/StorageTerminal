@@ -3,7 +3,10 @@ package com.duox.storagemanager.mixin;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.duox.storagemanager.utils.ManualContainerTracker;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -16,18 +19,20 @@ public class MixinClientPacketListener {
     @Inject(method = "handleOpenScreen", at = @At("HEAD"))
     private void onOpenScreen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
         AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-        if (autoStash != null && autoStash.isEnabled() && autoStash.isSilentMode()) {
-            autoStash.onSilentContainerOpen(packet.getContainerId(), packet.getType());
-        } else if (autoStash != null) {
-            // Nếu không phải silent mode, có thể là manual open
-            // Gọi onManualContainerOpen với vị trí block đã lưu
-            if (AutoStash.getLastInteractedBlock() != null) {
-                autoStash.onManualContainerOpen(packet.getContainerId(), AutoStash.getLastInteractedBlock());
+        if (autoStash != null) {
+            if (autoStash.isEnabled()) {
+                autoStash.onSilentContainerOpen(packet.getContainerId(), packet.getType());
+            } else {
+                // Treat the open as manual if a block was clicked.
+                BlockPos last = ManualContainerTracker.getLastInteractedBlock();
+                if (last != null) {
+                    ManualContainerTracker.onManualContainerOpen(last, Minecraft.getInstance());
+                }
             }
         }
 
         StorageManager storageManager = ModuleManager.INSTANCE.getModule(StorageManager.class);
-        if (storageManager != null && storageManager.isEnabled() && storageManager.isSilentMode()) {
+        if (storageManager != null && storageManager.isSilentMode()) {
             storageManager.onSilentContainerOpen(packet.getContainerId(), packet.getType());
         }
     }

@@ -1,21 +1,16 @@
 package com.duox.storagemanager.modules;
 
 import com.duox.storagemanager.gui.StorageScreen;
-import com.duox.storagemanager.system.Category;
 import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.*;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.client.gui.screens.inventory.CraftingScreen;
 import net.minecraft.world.level.block.CraftingTableBlock;
@@ -23,20 +18,19 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.*;
 
+/* Plans and executes item retrieval from cached chests. */
 public class StorageManager extends Module {
-    // Request Queue: Item ID -> Quantity needed
+    // Item id -> requested quantity.
     private final Map<String, Integer> requestQueue = new HashMap<>();
 
-    // Execution Queue: Chest Pos -> List of Item IDs to take from it
+    // Chest position -> items to withdraw.
     private final Map<BlockPos, Map<String, Integer>> retrievalPlan = new HashMap<>();
     private Iterator<Map.Entry<BlockPos, Map<String, Integer>>> retrievalIterator;
     private Map.Entry<BlockPos, Map<String, Integer>> currentTargetEntry;
 
-    // --- AUTO CRAFTING VARIABLES ---
     private RecipeDisplayId pendingRecipeId = null;
     private boolean pendingRecipePlaceAll = false;
 
-    // State Machine
     private enum State {
         IDLE,
         PLANNING,
@@ -48,36 +42,29 @@ public class StorageManager extends Module {
     }
 
     private static final int CHEST_OPEN_TIMEOUT = 11;
-    private static final int PARTIAL_MOVE_DELAY = 0;
-    private static final int FULL_MOVE_DELAY = 0;
-    private static final int PLAYER_INVENTORY_SIZE = 36;
 
     private State currentState = State.IDLE;
-    private BlockPos currentTarget = null;
     private BlockPos returnToContainerPos = null;
     private int waitTimer = 0;
     private int silentContainerId = -1;
-    private boolean containerReady = false;
 
     public final NumberSetting panelX = new NumberSetting("Panel X", 300, 0, 2560, 1);
     public final NumberSetting panelY = new NumberSetting("Panel Y", 100, 0, 1440, 1);
     public final BooleanSetting autoRequestRecipe = new BooleanSetting("Auto-Request Recipes", true);
 
-    // Panel settings
     public final NumberSetting panelScale = new NumberSetting("Panel Scale", 1.0, 0.5, 2.0, 0.1);
     public final NumberSetting panelGridCols = new NumberSetting("Panel Columns", 8, 4, 16, 1);
     public final NumberSetting panelGridRows = new NumberSetting("Panel Rows", 7, 4, 16, 1);
 
-    // Screen settings
     public final NumberSetting screenScale = new NumberSetting("Screen Scale", 1.0, 0.5, 2.0, 0.1);
     public final NumberSetting screenGridCols = new NumberSetting("Screen Columns", 9, 4, 16, 1);
     public final NumberSetting screenGridRows = new NumberSetting("Screen Rows", 9, 4, 16, 1);
 
-    // Scan Range setting for filtering active cache
+    // Radius used to build the active cache.
     public final NumberSetting scanRange = new NumberSetting("Scan Range", 16.0, 4.0, 64.0, 1.0);
 
     public StorageManager() {
-        super("StorageManager", "Manage items from cached chests.", Category.UTILITY);
+        super("StorageManager", "Manage items from cached chests.");
         this.getKeyMapping().setKey(
                 com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_V));
         this.addSetting(panelX);
@@ -97,10 +84,6 @@ public class StorageManager extends Module {
         if (mc.player == null)
             return;
 
-        if (mc.gui.screen() == null) {
-            mc.gui.setScreen(new StorageScreen(this));
-        }
-
         if (!requestQueue.isEmpty()) {
             startRetrieval();
         } else {
@@ -114,9 +97,15 @@ public class StorageManager extends Module {
     }
 
     @Override
+    public void onWorldChanged() {
+        resetState();
+        clearRequestQueue();
+    }
+
+    @Override
     public void onTick() {
         if (mc.player == null || mc.level == null) {
-            this.setEnabled(false); // Vẫn tắt nếu người chơi thoát game
+            this.setEnabled(false); // Disable when the player leaves the world.
             return;
         }
 
@@ -144,8 +133,6 @@ public class StorageManager extends Module {
         }
     }
 
-    // --- Public API for GUI ---
-
     public void addToRequestQueue(String itemId, int quantity) {
         requestQueue.put(itemId, requestQueue.getOrDefault(itemId, 0) + quantity);
     }
@@ -155,25 +142,22 @@ public class StorageManager extends Module {
         pendingRecipeId = null;
     }
 
-    public Map<String, Integer> getRequestQueue() {
-        return requestQueue;
+    public int getQueued(String itemId) {
+        return requestQueue.getOrDefault(itemId, 0);
+    }
+
+    public void adjustQueued(String itemId, int delta, int max) {
+        int target = Math.max(0, Math.min(max, getQueued(itemId) + delta));
+        if (target == 0) {
+            requestQueue.remove(itemId);
+        } else {
+            requestQueue.put(itemId, target);
+        }
     }
 
     public void setPendingRecipe(RecipeDisplayId id, boolean placeAll) {
         this.pendingRecipeId = id;
         this.pendingRecipePlaceAll = placeAll;
-    }
-
-    public boolean hasItemInCache(String itemId) {
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
-        if (cache == null) return false;
-
-        for (Map<String, Integer> content : cache.values()) {
-            if (content != null && content.containsKey(itemId) && content.get(itemId) > 0) {
-                return true;
-            }
-        }
-        return false;
     }
 
     public void startRetrieval() {
@@ -202,29 +186,17 @@ public class StorageManager extends Module {
         }
     }
 
-    // --- Internal Logic ---
     public void ensureCacheLoaded() {
-        String currentDim = CacheUtils.getDimensionId(mc);
-        Map<String, Map<String, Integer>> globalBuffer = AutoStash.getGlobalBuffer();
-
-        // KIỂM TRA ĐÚNG CHUẨN: Rỗng HOẶC sai dimension
-        if (globalBuffer.isEmpty() || !currentDim.equals(ChestCache.currentLoadedDimension)) {
-            // Sử dụng luôn hàm chuẩn hóa của ChestCache thay vì tự nhét vào globalBuffer
-            com.duox.storagemanager.utils.ChestCache.loadFromDatabase(mc, currentDim);
-            AutoStash.cacheDirty = true;
-
-            // Lấy lại size để hiển thị log
-            int size = AutoStash.getGlobalBuffer().size();
-            sendMessage("§aLoaded cache for " + currentDim + " (" + size + " chests).");
+        if (ChestCache.ensureLoaded(mc)) {
+            int size = ChestCache.getGlobalBuffer().size();
+            sendMessage("§aLoaded cache for " + CacheUtils.getDimensionId(mc) + " (" + size + " chests).");
         }
     }
 
     private void resetState() {
         currentState = State.IDLE;
-        currentTarget = null;
         returnToContainerPos = null;
         silentContainerId = -1;
-        containerReady = false;
         pendingRecipeId = null;
         retrievalPlan.clear();
         retrievalIterator = null;
@@ -233,15 +205,26 @@ public class StorageManager extends Module {
 
     private void calculateRetrievalPlan() {
         retrievalPlan.clear();
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
+        Map<String, Map<String, Integer>> cache = ChestCache.getActiveCache();
 
         if (requestQueue.isEmpty()) {
-            finishWhenQueueEmpty();
+            currentState = State.IDLE;
             return;
         }
 
         Map<String, Integer> remainingNeeds = drainRequestQueue();
-        List<String> sortedChests = sortChestsByRelevance(cache, remainingNeeds, mc.player.blockPosition());
+        BlockPos playerPos = mc.player.blockPosition();
+        List<String> sortedChests = new ArrayList<>(cache.keySet());
+        sortedChests.sort((s1, s2) -> {
+            int score1 = getMinRelevantQuantity(cache.get(s1), remainingNeeds);
+            int score2 = getMinRelevantQuantity(cache.get(s2), remainingNeeds);
+            if (score1 != score2) {
+                return Integer.compare(score1, score2);
+            }
+            BlockPos p1 = CacheUtils.stringToPos(s1);
+            BlockPos p2 = CacheUtils.stringToPos(s2);
+            return Double.compare(p1.distSqr(playerPos), p2.distSqr(playerPos));
+        });
 
         for (String chestPosStr : sortedChests) {
             Map<String, Integer> contents = cache.get(chestPosStr);
@@ -260,13 +243,6 @@ public class StorageManager extends Module {
         return remainingNeeds;
     }
 
-    private List<String> sortChestsByRelevance(Map<String, Map<String, Integer>> cache,
-                                               Map<String, Integer> remainingNeeds, BlockPos playerPos) {
-        List<String> sortedChests = new ArrayList<>(cache.keySet());
-        sortedChests.sort(new ChestComparator(cache, remainingNeeds, playerPos));
-        return sortedChests;
-    }
-
     private void finalizePlanning(Map<String, Integer> remainingNeeds) {
         if (!remainingNeeds.isEmpty()) {
             sendMessage("Warning: Cannot find all items. Missing: " + remainingNeeds);
@@ -282,11 +258,6 @@ public class StorageManager extends Module {
         moveToNextTarget();
     }
 
-    private void finishWhenQueueEmpty() {
-        currentState = State.IDLE;
-        // Đã xóa lệnh tắt module ở đây
-    }
-
     private void processChestContents(Map<String, Integer> contents, BlockPos chestPos, Map<String, Integer> remainingNeeds) {
         List<String> fulfilledNeeds = new ArrayList<>();
 
@@ -294,7 +265,7 @@ public class StorageManager extends Module {
             String reqId = req.getKey();
             int needed = req.getValue();
 
-            // 1. THỬ KHỚP CHÍNH XÁC (Dành cho việc user tự tay click rút đồ có Enchant từ GUI)
+            // Prefer an exact item key match.
             if (contents.containsKey(reqId)) {
                 int available = contents.get(reqId);
                 int toTake = Math.min(needed, available);
@@ -304,16 +275,14 @@ public class StorageManager extends Module {
                 }
             }
 
-            // 2. THỬ KHỚP CƠ BẢN (Dành cho Auto-Crafting bằng Recipe Book)
-            // Nếu vẫn còn thiếu và reqId không phải là một chuỗi SNBT phức tạp
+            // Otherwise match by base id for auto-crafting requests.
             if (needed > 0 && !reqId.startsWith("{")) {
                 for (Map.Entry<String, Integer> chestItem : contents.entrySet()) {
                     String cacheKey = chestItem.getKey();
 
-                    // So sánh ID cơ bản bỏ qua NBT
                     if (ItemSerializer.getBaseId(cacheKey).equals(reqId)) {
                         int available = chestItem.getValue();
-                        // Tính số lượng item này đã được lên kế hoạch lấy ra trước đó (để tránh lấy lố)
+                        // Avoid planning more than the chest contains.
                         int planned = retrievalPlan.getOrDefault(chestPos, new HashMap<>()).getOrDefault(cacheKey, 0);
                         int actualAvailable = available - planned;
 
@@ -321,13 +290,13 @@ public class StorageManager extends Module {
                             int toTake = Math.min(needed, actualAvailable);
                             retrievalPlan.computeIfAbsent(chestPos, k -> new HashMap<>()).put(cacheKey, toTake);
                             needed -= toTake;
-                            if (needed <= 0) break; // Đủ rồi thì dừng
+                            if (needed <= 0) break;
                         }
                     }
                 }
             }
 
-            // Cập nhật lại số lượng còn thiếu
+            // Update the remaining need.
             if (needed <= 0) {
                 fulfilledNeeds.add(reqId);
             } else if (needed != req.getValue()) {
@@ -335,7 +304,7 @@ public class StorageManager extends Module {
             }
         }
 
-        // Xóa các item đã lấy đủ ra khỏi danh sách yêu cầu
+        // Remove fully fulfilled requests.
         for (String f : fulfilledNeeds) {
             remainingNeeds.remove(f);
         }
@@ -343,12 +312,8 @@ public class StorageManager extends Module {
 
     private void handleEmptyPlan() {
         sendMessage("Could not find any items to retrieve.");
-        if (requestQueue.isEmpty()) {
-            currentState = State.IDLE;
-            // Đã xóa lệnh tắt module ở đây
-        } else {
-            calculateRetrievalPlan();
-        }
+        pendingRecipeId = null;
+        currentState = State.IDLE;
     }
 
     private int getMinRelevantQuantity(Map<String, Integer> chestContents, Map<String, Integer> needs) {
@@ -370,7 +335,6 @@ public class StorageManager extends Module {
     private void moveToNextTarget() {
         if (retrievalIterator != null && retrievalIterator.hasNext()) {
             currentTargetEntry = retrievalIterator.next();
-            currentTarget = currentTargetEntry.getKey();
             currentState = State.OPENING_CHEST;
         } else {
             sendMessage("Retrieval complete.");
@@ -384,7 +348,6 @@ public class StorageManager extends Module {
                     currentState = State.WAITING_FOR_RETURN_OPEN;
                 } else {
                     currentState = State.IDLE;
-                    // Đã xóa lệnh tắt module ở đây
                 }
             }
         }
@@ -397,47 +360,39 @@ public class StorageManager extends Module {
                 pendingRecipeId = null;
             }
             currentState = State.IDLE;
-            // Đã xóa lệnh tắt module ở đây
         } else {
             waitTimer--;
             if (waitTimer <= 0) {
                 currentState = State.IDLE;
                 pendingRecipeId = null;
-                // Đã xóa lệnh tắt module ở đây
             }
         }
     }
 
     private void openTargetSilent() {
-        if (currentTarget == null) return;
+        if (currentTargetEntry == null) return;
 
-        Vec3 center = Vec3.atCenterOf(currentTarget);
-        BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, currentTarget, false);
-
-        containerReady = false;
         silentContainerId = -1;
-        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
-        mc.player.swing(InteractionHand.MAIN_HAND);
+        InventoryUtils.useItemOnSilently(currentTargetEntry.getKey());
 
         currentState = State.WAITING_FOR_OPEN;
         waitTimer = CHEST_OPEN_TIMEOUT;
     }
 
     private void waitForContainer() {
-        if (containerReady && silentContainerId != -1) {
+        if (silentContainerId != -1) {
             currentState = State.WITHDRAWING;
             return;
         }
         waitTimer--;
         if (waitTimer <= 0) {
-            sendMessage("Timeout opening chest at " + currentTarget);
+            sendMessage("Timeout opening chest at " + currentTargetEntry.getKey());
             currentState = State.CLOSING_CHEST;
         }
     }
 
     public void onSilentContainerOpen(int containerId, MenuType<?> menuType) {
         this.silentContainerId = containerId;
-        this.containerReady = true;
     }
 
     public boolean isSilentMode() {
@@ -451,7 +406,7 @@ public class StorageManager extends Module {
         }
 
         AbstractContainerMenu menu = mc.player.containerMenu;
-        int containerSlots = menu.slots.size() - PLAYER_INVENTORY_SIZE;
+        int containerSlots = menu.slots.size() - InventoryUtils.PLAYER_INVENTORY_SIZE;
 
         if (containerSlots <= 0) {
             currentState = State.CLOSING_CHEST;
@@ -486,21 +441,17 @@ public class StorageManager extends Module {
     private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId,
                                     int needed, int containerSlots) {
         int inSlot = stack.getCount();
-        int actualTaken = 0;
-        boolean isPartial = false;
+        int actualTaken;
 
         if (inSlot <= needed) {
             actualTaken = transferFullStack(menu, slotIndex, stack);
         } else {
             actualTaken = transferPartialStack(menu, slotIndex, needed, containerSlots);
-            if (actualTaken > 0)
-                isPartial = true;
         }
 
         if (actualTaken > 0) {
             updateCache(itemId, actualTaken);
             currentTargetEntry.getValue().put(itemId, needed - actualTaken);
-            waitTimer = isPartial ? PARTIAL_MOVE_DELAY : FULL_MOVE_DELAY;
             return true;
         }
         return false;
@@ -531,10 +482,10 @@ public class StorageManager extends Module {
     }
 
     private void updateCache(String itemId, int amountTaken) {
-        if (currentTarget == null) return;
+        if (currentTargetEntry == null) return;
 
-        String chestJsonKey = CacheUtils.posToString(currentTarget);
-        Map<String, Map<String, Integer>> globalCache = AutoStash.getGlobalBuffer();
+        String chestJsonKey = CacheUtils.posToString(currentTargetEntry.getKey());
+        Map<String, Map<String, Integer>> globalCache = ChestCache.getGlobalBuffer();
         if (globalCache.containsKey(chestJsonKey)) {
             Map<String, Integer> chestContents = globalCache.get(chestJsonKey);
 
@@ -548,7 +499,7 @@ public class StorageManager extends Module {
                     chestContents.put(itemId, newAmount);
                 }
 
-                AutoStash.updateGlobalAndSync(currentTarget, chestContents);
+                ChestCache.updateAndSync(currentTargetEntry.getKey(), chestContents);
             }
         }
     }
@@ -556,52 +507,17 @@ public class StorageManager extends Module {
     private void closeSilent() {
         InventoryUtils.closeContainerSilent();
         silentContainerId = -1;
-        containerReady = false;
 
         moveToNextTarget();
     }
 
     private void openReturnContainer() {
         if (returnToContainerPos == null) return;
-
-        Vec3 center = Vec3.atCenterOf(returnToContainerPos);
-        BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, returnToContainerPos, false);
-
-        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
-        mc.player.swing(InteractionHand.MAIN_HAND);
+        InventoryUtils.useItemOnSilently(returnToContainerPos);
     }
 
     private void sendMessage(String message) {
         com.duox.storagemanager.utils.ToastUtils.sendToast("§6StorageManager", message);
     }
 
-    private class ChestComparator implements Comparator<String> {
-        private final Map<String, Map<String, Integer>> cache;
-        private final Map<String, Integer> remainingNeeds;
-        private final BlockPos playerPos;
-
-        public ChestComparator(Map<String, Map<String, Integer>> cache, Map<String, Integer> remainingNeeds,
-                               BlockPos playerPos) {
-            this.cache = cache;
-            this.remainingNeeds = remainingNeeds;
-            this.playerPos = playerPos;
-        }
-
-        @Override
-        public int compare(String s1, String s2) {
-            Map<String, Integer> c1Contents = cache.get(s1);
-            Map<String, Integer> c2Contents = cache.get(s2);
-
-            int score1 = getMinRelevantQuantity(c1Contents, remainingNeeds);
-            int score2 = getMinRelevantQuantity(c2Contents, remainingNeeds);
-
-            if (score1 != score2) {
-                return Integer.compare(score1, score2);
-            }
-
-            BlockPos p1 = CacheUtils.stringToPos(s1);
-            BlockPos p2 = CacheUtils.stringToPos(s2);
-            return Double.compare(p1.distSqr(playerPos), p2.distSqr(playerPos));
-        }
-    }
 }
