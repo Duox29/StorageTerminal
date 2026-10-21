@@ -14,6 +14,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.registries.BuiltInRegistries;
 
+/* Serializes item stacks to stable cache keys. */
 public class ItemSerializer {
 
     public static String serialize(ItemStack stack) {
@@ -31,12 +32,12 @@ public class ItemSerializer {
                 if (result.isSuccess()) {
                     Tag tag = result.getOrThrow();
                     if (tag instanceof CompoundTag compound) {
-                        compound.remove("count"); // Xóa count để gộp item vào chung 1 ô
+                        compound.remove("count"); // Remove count so equal items merge.
                         return compound.toString();
                     }
                 }
             } catch (Exception e) {
-                // Ignore
+                // Fall back to the item id.
             }
         }
         return id;
@@ -52,7 +53,7 @@ public class ItemSerializer {
 
                 HolderLookup.Provider provider = mc.level.registryAccess();
 
-                // Dùng chính xác tên hàm lấy từ bảng mapping của bạn
+                // Restore the count omitted during serialization.
                 CompoundTag tag = TagParser.parseCompoundFully(key);
                 tag.putInt("count", 1);
 

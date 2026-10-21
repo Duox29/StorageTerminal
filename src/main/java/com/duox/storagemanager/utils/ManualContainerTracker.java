@@ -1,15 +1,14 @@
 package com.duox.storagemanager.utils;
 
+import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
-import net.minecraft.world.level.block.ChestBlock;
-import net.minecraft.world.level.block.state.properties.ChestType;
-import net.minecraft.core.Direction;
-import net.minecraft.client.Minecraft;
+import net.minecraft.world.level.block.state.BlockState;
 
-import java.util.function.Consumer;
-
+/* Tracks containers opened manually by the player. */
 public class ManualContainerTracker {
     private static BlockPos lastInteractedBlock = null;
     private static boolean isManualOpen = false;
@@ -25,53 +24,42 @@ public class ManualContainerTracker {
         return lastInteractedBlock;
     }
 
-    public static void onManualContainerOpen(int containerId, BlockPos containerPos, Minecraft mc,
-                                             Consumer<BlockPos> onUpdateReady) {
+    public static void onManualContainerOpen(BlockPos containerPos, Minecraft mc) {
         if (!isManualOpen) return;
 
         BlockEntity be = mc.level.getBlockEntity(containerPos);
-        if (!isValidContainer(be)) return;
+        if (!InventoryUtils.isStorable(be)) return;
 
-        scheduleManualCacheUpdate(containerPos, be);
-    }
-
-    private static void scheduleManualCacheUpdate(BlockPos pos, BlockEntity be) {
-        // Handle double chest: skip if LEFT chest, use RIGHT chest position instead
-        BlockPos actualPos = pos;
+        // Normalize a double chest to its right half.
+        BlockPos actualPos = containerPos;
         if (be instanceof ChestBlockEntity) {
-            net.minecraft.world.level.block.state.BlockState state = be.getBlockState();
-            if (state.hasProperty(ChestBlock.TYPE) && state.getValue(ChestBlock.TYPE) == ChestType.LEFT) {
+            BlockState state = be.getBlockState();
+            if (InventoryUtils.isDoubleChestLeftHalf(state)) {
                 Direction facing = state.getValue(ChestBlock.FACING);
-                actualPos = pos.relative(facing.getClockWise());
+                actualPos = containerPos.relative(facing.getClockWise());
             }
         }
 
         pendingManualUpdate = actualPos;
-        manualUpdateTimer = 5; // Wait 5 ticks for container menu to sync
+        manualUpdateTimer = 5; // Wait for the menu to sync.
     }
 
-    public static void tick(Minecraft mc, Consumer<BlockPos> onUpdateReady) {
+    public static void tickManualCacheUpdate() {
         if (pendingManualUpdate == null) return;
 
         manualUpdateTimer--;
-        if (manualUpdateTimer <= 0) {
-            // Verify container is still open
-            if (mc.player != null && mc.player.containerMenu != null
-                    && mc.player.containerMenu != mc.player.inventoryMenu) {
-                onUpdateReady.accept(pendingManualUpdate);
-            }
-            pendingManualUpdate = null;
-            isManualOpen = false;
-        }
-    }
+        if (manualUpdateTimer > 0) return;
 
-    public static void tickManualCacheUpdate() { // Static hook for AutoStash
+        BlockPos pos = pendingManualUpdate;
+        pendingManualUpdate = null;
+        isManualOpen = false;
+
+        // Verify the container is still open.
         Minecraft mc = Minecraft.getInstance();
-        tick(mc, (pos) -> {
-            if (mc.player != null) {
-                ChestCache.updateFromContainerMenu(pos, mc.player.containerMenu, mc);
-            }
-        });
+        if (mc.player != null && mc.player.containerMenu != null
+                && mc.player.containerMenu != mc.player.inventoryMenu) {
+            ChestCache.updateFromContainerMenu(pos, mc.player.containerMenu, mc);
+        }
     }
 
     public static void reset() {
@@ -79,11 +67,5 @@ public class ManualContainerTracker {
         isManualOpen = false;
         pendingManualUpdate = null;
         manualUpdateTimer = 0;
-    }
-
-    private static boolean isValidContainer(BlockEntity be) {
-        return be instanceof net.minecraft.world.level.block.entity.ChestBlockEntity
-                || be instanceof net.minecraft.world.level.block.entity.BarrelBlockEntity
-                || be instanceof net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
     }
 }
