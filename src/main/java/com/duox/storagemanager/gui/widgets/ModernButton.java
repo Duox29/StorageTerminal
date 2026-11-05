@@ -1,13 +1,12 @@
 package com.duox.storagemanager.gui.widgets;
 
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.network.chat.Component;
 
 import java.util.function.BooleanSupplier;
 
-/* Flat button with hover and active states. */
+/* Vanilla Minecraft button with a subtle marker for selected toggles. */
 public class ModernButton extends Button {
     private BooleanSupplier isActiveSupplier = () -> false;
 
@@ -22,17 +21,12 @@ public class ModernButton extends Button {
 
     @Override
     protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
-        boolean hovered = isHoveredOrFocused();
-        boolean active = isActiveSupplier.getAsBoolean();
+        this.extractDefaultSprite(graphics);
+        this.extractDefaultLabel(graphics.textRendererForWidget(this, GuiGraphicsExtractor.HoveredTextEffects.NONE));
 
-        int bgColor = hovered ? StorageTheme.BTN_HOVER_BG : StorageTheme.BTN_NORMAL_BG;
-        int borderColor = active ? StorageTheme.BTN_ACTIVE_BORDER
-                : (hovered ? StorageTheme.BTN_HOVER_BORDER : StorageTheme.BTN_NORMAL_BORDER);
-        int textColor = hovered || active ? 0xFFFFFFFF : 0xFFAAAAAA;
-
-        graphics.fill(getX(), getY(), getX() + width, getY() + height, bgColor);
-        graphics.outline(getX(), getY(), width, height, borderColor);
-        graphics.centeredText(Minecraft.getInstance().font, getMessage(),
-                getX() + width / 2, getY() + (height - 8) / 2, textColor);
+        if (isActiveSupplier.getAsBoolean()) {
+            graphics.fill(getX() + 4, getY() + height - 4,
+                    getX() + width - 4, getY() + height - 2, StorageTheme.BTN_ACTIVE_BORDER);
+        }
     }
 }

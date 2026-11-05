@@ -5,6 +5,7 @@ import com.duox.storagemanager.gui.widgets.ModernButton;
 import com.duox.storagemanager.gui.widgets.StorageGridMetrics;
 import com.duox.storagemanager.gui.widgets.StorageTheme;
 import com.duox.storagemanager.gui.widgets.StorageUi;
+import com.duox.storagemanager.gui.widgets.VanillaStorageGui;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ItemFilterCategory;
@@ -54,11 +55,10 @@ public class StorageScreen extends Screen {
         this.guiLeft = (this.width - metrics.width()) / 2;
         this.guiTop = (this.height - metrics.height()) / 2;
 
-        int padding = 20;
+        int padding = 10;
         int searchW = metrics.width() - (padding * 2);
-        this.searchBox = new EditBox(this.font, guiLeft + padding, guiTop + 25, searchW, 12, Component.literal("Search"));
+        this.searchBox = new EditBox(this.font, guiLeft + padding, guiTop + 25, searchW, 18, Component.literal("Search"));
         this.searchBox.setMaxLength(50);
-        this.searchBox.setBordered(false);
         this.searchBox.setTextColor(0xFFFFFFFF);
         this.searchBox.setResponder(itemGrid::setQuery);
         this.addWidget(this.searchBox);
@@ -166,16 +166,10 @@ public class StorageScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         itemGrid.refreshIfDirty();
 
-        graphics.fill(guiLeft, guiTop, guiLeft + metrics.width(), guiTop + metrics.height(), StorageTheme.BG_MAIN);
-        graphics.outline(guiLeft, guiTop, metrics.width(), metrics.height(), StorageTheme.BG_BORDER);
-
-        int searchX = searchBox.getX() - 4;
-        int searchY = searchBox.getY() - 2;
-        graphics.fill(searchX, searchY, searchX + searchBox.getWidth() + 8, searchY + 16, 0xFF000000);
-        graphics.outline(searchX, searchY, searchBox.getWidth() + 8, 16, StorageTheme.BG_BORDER);
+        graphics.fill(0, 0, this.width, this.height, 0x66000000);
+        VanillaStorageGui.panel(graphics, guiLeft, guiTop, metrics.width(), metrics.height());
         this.searchBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
-
-        graphics.text(this.font, this.title, guiLeft + 8, guiTop + 10, StorageTheme.TEXT_TITLE, false);
+        graphics.text(this.font, this.title, guiLeft + 8, guiTop + 9, StorageTheme.TEXT_TITLE, false);
 
         itemGrid.render(graphics, layout(), mouseX, mouseY);
 

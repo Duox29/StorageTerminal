@@ -1,6 +1,7 @@
 package com.duox.storagemanager.gui;
 
-import com.duox.storagemanager.modules.StorageManager;
+import com.duox.storagemanager.gui.widgets.StorageTheme;
+import com.duox.storagemanager.gui.widgets.VanillaStorageGui;
 import com.duox.storagemanager.system.ConfigManager;
 import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.ModuleManager;
@@ -23,7 +24,6 @@ import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /* Module list and settings panel. */
@@ -44,6 +44,7 @@ public class UtilityGui extends Screen {
 
     private Module selectedModule;
     private final List<AbstractWidget> settingWidgets = new ArrayList<>();
+    private final List<Button> moduleButtons = new ArrayList<>();
 
     public UtilityGui() {
         super(Component.literal("Storage Manager"));
@@ -56,6 +57,7 @@ public class UtilityGui extends Screen {
         if (selectedModule == null && !modules.isEmpty()) {
             selectedModule = modules.getFirst();
         }
+        rebuildModuleButtons();
         rebuildSettings();
     }
 
@@ -63,40 +65,44 @@ public class UtilityGui extends Screen {
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         this.extractBackground(graphics, mouseX, mouseY, partialTick);
 
-        graphics.fill(0, TOP_BAR_HEIGHT, SIDEBAR_WIDTH, this.height, 0xAA000000);
-        graphics.fill(SIDEBAR_WIDTH, TOP_BAR_HEIGHT, this.width, this.height, 0x80000000);
-        graphics.verticalLine(SIDEBAR_WIDTH, TOP_BAR_HEIGHT, this.height, 0xFFFFFFFF);
-        graphics.horizontalLine(0, this.width, TOP_BAR_HEIGHT, 0xFFFFFFFF);
-        graphics.text(this.font, "Module Manager", 10, 11, 0xFFFFFFFF, false);
+        VanillaStorageGui.panel(graphics, 0, 0, this.width, this.height);
+        graphics.verticalLine(SIDEBAR_WIDTH, TOP_BAR_HEIGHT + 3, this.height - 6, 0xFF8B8B8B);
+        graphics.verticalLine(SIDEBAR_WIDTH + 1, TOP_BAR_HEIGHT + 3, this.height - 6, 0xFFFFFFFF);
+        graphics.horizontalLine(6, this.width - 7, TOP_BAR_HEIGHT, 0xFF8B8B8B);
+        graphics.horizontalLine(6, this.width - 7, TOP_BAR_HEIGHT + 1, 0xFFFFFFFF);
+        graphics.text(this.font, "Storage Manager", 10, 11, StorageTheme.TEXT_TITLE, false);
 
-        renderModuleList(graphics, mouseX, mouseY);
+        updateModuleButtons();
         renderModuleDetails(graphics);
 
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 
-    private void renderModuleList(GuiGraphicsExtractor graphics, int mouseX, int mouseY) {
-        List<Module> modules = ModuleManager.INSTANCE.getModules();
-        int btnX = (SIDEBAR_WIDTH - MODULE_BTN_WIDTH) / 2;
-
-        if (modules.isEmpty()) {
-            graphics.centeredText(this.font, "No modules", SIDEBAR_WIDTH / 2, MODULE_LIST_TOP, 0xFFAAAAAA);
-            return;
+    private void rebuildModuleButtons() {
+        for (Button button : moduleButtons) {
+            this.removeWidget(button);
         }
+        moduleButtons.clear();
 
+        int btnX = (SIDEBAR_WIDTH - MODULE_BTN_WIDTH) / 2;
+        List<Module> modules = ModuleManager.INSTANCE.getModules();
         for (int i = 0; i < modules.size(); i++) {
             Module module = modules.get(i);
-            int btnY = moduleButtonY(i);
+            Button button = Button.builder(Component.literal(module.getName()), b -> {
+                selectedModule = module;
+                rebuildSettings();
+            }).bounds(btnX, moduleButtonY(i), MODULE_BTN_WIDTH, MODULE_BTN_HEIGHT).build();
+            moduleButtons.add(this.addRenderableWidget(button));
+        }
+    }
 
-            boolean hovered = isInside(mouseX, mouseY, btnX, btnY, MODULE_BTN_WIDTH, MODULE_BTN_HEIGHT);
-            int color = module.isEnabled() ? 0xFF2ECC71 : 0xFFE74C3C;
-            if (hovered) color = darken(color);
-
-            graphics.fill(btnX, btnY, btnX + MODULE_BTN_WIDTH, btnY + MODULE_BTN_HEIGHT, color);
-            if (module == selectedModule) {
-                graphics.outline(btnX - 1, btnY - 1, MODULE_BTN_WIDTH + 2, MODULE_BTN_HEIGHT + 2, 0xFF3498DB);
-            }
-            graphics.centeredText(this.font, module.getName(), btnX + MODULE_BTN_WIDTH / 2, btnY + 7, 0xFFFFFFFF);
+    private void updateModuleButtons() {
+        List<Module> modules = ModuleManager.INSTANCE.getModules();
+        for (int i = 0; i < Math.min(moduleButtons.size(), modules.size()); i++) {
+            Module module = modules.get(i);
+            Button button = moduleButtons.get(i);
+            button.setMessage(Component.literal((module == selectedModule ? "> " : "") + module.getName()));
+            button.setFGColor(module.isEnabled() ? 0xFF358335 : 0xFF626262);
         }
     }
 
@@ -107,17 +113,18 @@ public class UtilityGui extends Screen {
     private void renderModuleDetails(GuiGraphicsExtractor graphics) {
         if (selectedModule == null) {
             graphics.centeredText(this.font, "Select a module",
-                    SIDEBAR_WIDTH + (this.width - SIDEBAR_WIDTH) / 2, this.height / 2, 0xFFAAAAAA);
+                    SIDEBAR_WIDTH + (this.width - SIDEBAR_WIDTH) / 2, this.height / 2,
+                    StorageTheme.TEXT_TITLE);
             return;
         }
 
         int y = TOP_BAR_HEIGHT + 12;
-        graphics.text(this.font, selectedModule.getName(), DETAILS_LEFT, y, 0xFFFFFF00, false);
+        graphics.text(this.font, selectedModule.getName(), DETAILS_LEFT, y, StorageTheme.TEXT_TITLE, false);
         y += 16;
         graphics.text(this.font, "Status: " + (selectedModule.isEnabled() ? "Enabled" : "Disabled"),
-                DETAILS_LEFT, y, selectedModule.isEnabled() ? 0xFF55FF55 : 0xFFFF5555, false);
+                DETAILS_LEFT, y, selectedModule.isEnabled() ? 0xFF358335 : 0xFFAA3333, false);
         y += LINE_HEIGHT;
-        graphics.text(this.font, selectedModule.getDescription(), DETAILS_LEFT, y, 0xFFAAAAAA, false);
+        graphics.text(this.font, selectedModule.getDescription(), DETAILS_LEFT, y, 0xFF555555, false);
     }
 
     private void rebuildSettings() {
@@ -253,39 +260,6 @@ public class UtilityGui extends Screen {
                         + module.getKeyMapping().getKey().getDisplayName().getString()));
             }
         }
-    }
-
-    @Override
-    public boolean mouseClicked(MouseButtonEvent event, boolean isFocused) {
-        if (super.mouseClicked(event, isFocused)) return true;
-
-        double mouseX = event.x();
-        double mouseY = event.y();
-        if (mouseY < TOP_BAR_HEIGHT || mouseX > SIDEBAR_WIDTH) return false;
-        if (ModuleManager.INSTANCE.getModules().isEmpty()) return false;
-
-        int btnX = (SIDEBAR_WIDTH - MODULE_BTN_WIDTH) / 2;
-        List<Module> modules = ModuleManager.INSTANCE.getModules();
-        for (int i = 0; i < modules.size(); i++) {
-            int btnY = moduleButtonY(i);
-            if (isInside(mouseX, mouseY, btnX, btnY, MODULE_BTN_WIDTH, MODULE_BTN_HEIGHT)) {
-                selectedModule = modules.get(i);
-                rebuildSettings();
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private boolean isInside(double mx, double my, int x, int y, int w, int h) {
-        return mx >= x && mx <= x + w && my >= y && my <= y + h;
-    }
-
-    private int darken(int color) {
-        int r = (int) (((color >> 16) & 0xFF) * 0.7);
-        int g = (int) (((color >> 8) & 0xFF) * 0.7);
-        int b = (int) ((color & 0xFF) * 0.7);
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
     }
 
     @Override

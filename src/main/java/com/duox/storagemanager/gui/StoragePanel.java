@@ -5,6 +5,7 @@ import com.duox.storagemanager.gui.widgets.ModernButton;
 import com.duox.storagemanager.gui.widgets.StorageGridMetrics;
 import com.duox.storagemanager.gui.widgets.StorageTheme;
 import com.duox.storagemanager.gui.widgets.StorageUi;
+import com.duox.storagemanager.gui.widgets.VanillaStorageGui;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
@@ -73,9 +74,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     private void initComponents() {
         int searchW = metrics.width() - (BOTTOM_PADDING * 2);
-        this.searchBox = new EditBox(mc.font, 0, 0, searchW, 12, Component.literal("Search"));
+        this.searchBox = new EditBox(mc.font, 0, 0, searchW, 18, Component.literal("Search"));
         this.searchBox.setMaxLength(50);
-        this.searchBox.setBordered(false);
         this.searchBox.setTextColor(0xFFFFFFFF);
         this.searchBox.setResponder(itemGrid::setQuery);
 
@@ -127,18 +127,15 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         itemGrid.refreshIfDirty();
 
-        graphics.fill(x, y, x + metrics.width(), y + metrics.height(), StorageTheme.BG_MAIN);
-        graphics.outline(x, y, metrics.width(), metrics.height(), StorageTheme.BG_BORDER);
+        VanillaStorageGui.panel(graphics, x, y, metrics.width(), metrics.height());
 
         boolean isHeaderHovered = mouseX >= x && mouseX <= x + metrics.width()
                 && mouseY >= y && mouseY <= y + HEADER_HEIGHT;
-        graphics.fill(x, y, x + metrics.width(), y + HEADER_HEIGHT,
-                isHeaderHovered ? StorageTheme.HEADER_HOVER : StorageTheme.HEADER);
-        graphics.text(mc.font, "Storage Terminal", x + 5, y + 6, StorageTheme.TEXT_TITLE, false);
-        graphics.horizontalLine(x, x + metrics.width() - 1, y + HEADER_HEIGHT, StorageTheme.BG_BORDER);
-
-        graphics.fill(searchBox.getX() - 2, searchBox.getY() - 2,
-                searchBox.getX() + searchBox.getWidth() + 2, searchBox.getY() + 14, 0xFF000000);
+        if (isHeaderHovered) {
+            graphics.fill(x + 4, y + 4, x + metrics.width() - 4, y + HEADER_HEIGHT,
+                    StorageTheme.HEADER_HOVER);
+        }
+        graphics.text(mc.font, "Storage Terminal", x + 8, y + 8, StorageTheme.TEXT_TITLE, false);
         searchBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         requestButton.extractRenderState(graphics, mouseX, mouseY, partialTick);

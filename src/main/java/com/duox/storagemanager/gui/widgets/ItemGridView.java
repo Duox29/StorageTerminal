@@ -112,7 +112,7 @@ public class ItemGridView {
             for (int col = 0; col < layout.cols(); col++) {
                 int x = layout.gridX() + col * layout.slotSize();
                 int y = layout.gridY() + row * layout.slotSize();
-                graphics.fill(x, y, x + layout.slotSize() - 1, y + layout.slotSize() - 1, StorageTheme.SLOT_BG);
+                VanillaStorageGui.slot(graphics, x, y, layout.slotSize());
             }
         }
     }
@@ -131,7 +131,8 @@ public class ItemGridView {
 
             boolean hovered = mouseX >= x && mouseX < x + slotSize && mouseY >= y && mouseY < y + slotSize;
             if (hovered) {
-                graphics.fill(x, y, x + slotSize - 1, y + slotSize - 1, StorageTheme.SLOT_HIGHLIGHT);
+                graphics.fill(x + 1, y + 1, x + slotSize - 1, y + slotSize - 1,
+                        StorageTheme.SLOT_HIGHLIGHT);
             }
 
             graphics.pose().pushMatrix();
@@ -143,7 +144,8 @@ public class ItemGridView {
 
             int queued = storageManager.getQueued(entry.id);
             if (queued > 0) {
-                graphics.outline(x, y, slotSize - 1, slotSize - 1, StorageTheme.BTN_ACTIVE_BORDER);
+                graphics.outline(x + 1, y + 1, slotSize - 2, slotSize - 2,
+                        StorageTheme.BTN_ACTIVE_BORDER);
             }
 
             if (hovered) {
@@ -165,7 +167,7 @@ public class ItemGridView {
         int width = layout.scrollbarWidth();
         int height = layout.gridHeight();
 
-        graphics.fill(x, y, x + width, y + height, StorageTheme.SCROLLBAR_TRACK);
+        VanillaStorageGui.inset(graphics, x, y, width, height);
 
         int totalRows = totalRows(layout);
         if (totalRows <= layout.rows()) {
@@ -176,7 +178,7 @@ public class ItemGridView {
         int thumbY = y + (int) ((height - thumbHeight) * scrollPosition);
         boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
 
-        graphics.fill(x + 1, thumbY, x + width - 1, thumbY + thumbHeight,
+        graphics.fill(x + 2, thumbY + 1, x + width - 2, thumbY + thumbHeight - 1,
                 hovered ? StorageTheme.SCROLLBAR_THUMB_HOVER : StorageTheme.SCROLLBAR_THUMB);
         graphics.outline(x + 1, thumbY, width - 2, thumbHeight,
                 hovered ? StorageTheme.SCROLLBAR_BORDER_HOVER : StorageTheme.SCROLLBAR_BORDER);
