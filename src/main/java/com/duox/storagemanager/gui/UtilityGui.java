@@ -21,7 +21,6 @@ import net.minecraft.client.input.InputWithModifiers;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,7 +101,7 @@ public class UtilityGui extends Screen {
             Module module = modules.get(i);
             Button button = moduleButtons.get(i);
             button.setMessage(Component.literal(module.getName()));
-            button.setFGColor(module == selectedModule ? StorageTheme.BTN_ACTIVE_TEXT
+            button.setLabelTextColor(module == selectedModule ? StorageTheme.BTN_ACTIVE_TEXT
                     : (module.isEnabled() ? 0xFF358335 : StorageTheme.BTN_INACTIVE_TEXT));
         }
     }
@@ -163,9 +162,9 @@ public class UtilityGui extends Screen {
             setting.toggle();
             ConfigManager.getInstance().save();
             b.setMessage(booleanLabel(setting));
-            b.setFGColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
+            b.setLabelTextColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
         }).bounds(x, y, WIDGET_WIDTH, WIDGET_HEIGHT).build();
-        button.setFGColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
+        button.setLabelTextColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
         return button;
     }
 
@@ -229,10 +228,10 @@ public class UtilityGui extends Screen {
         public boolean keyPressed(KeyEvent event) {
             if (!listening) return super.keyPressed(event);
 
-            if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+            if (event.key() == InputConstants.KEY_ESCAPE) {
                 listening = false;
             } else {
-                module.getKeyMapping().setKey(InputConstants.Type.KEYSYM.getOrCreate(event.key()));
+                module.getKeyMapping().setKey(InputConstants.Type.KEYBOARD.getOrCreate(event.key()));
                 Minecraft.getInstance().options.save();
                 KeyMapping.resetMapping();
                 listening = false;

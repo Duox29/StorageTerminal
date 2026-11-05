@@ -8,6 +8,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BarrelBlockEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
@@ -47,7 +48,7 @@ public class InventoryUtils {
         BlockHitResult hitResult = new BlockHitResult(center, Direction.UP, pos, false);
 
         mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hitResult);
-        mc.player.swing(InteractionHand.MAIN_HAND);
+        mc.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
     }
 
     /* --- container clicks --- */

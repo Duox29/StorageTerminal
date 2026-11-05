@@ -22,7 +22,7 @@ public class ModernButton extends Button {
     @Override
     protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         if (isActiveSupplier != null) {
-            this.setFGColor(isActiveSupplier.getAsBoolean()
+            this.setLabelTextColor(isActiveSupplier.getAsBoolean()
                     ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
         }
         this.extractDefaultSprite(graphics);

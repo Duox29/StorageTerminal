@@ -3,11 +3,12 @@ package com.duox.storagemanager.mixin;
 import com.duox.storagemanager.gui.StoragePanel;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -42,11 +43,32 @@ public abstract class MixinContainerScreen extends Screen {
             cir.setReturnValue(true);
         }
     }
+
+    @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
+    private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY,
+            CallbackInfoReturnable<Boolean> cir) {
+        // Container slot dragging must not steal an active panel or scrollbar drag.
+        if (storagePanel != null && storagePanel.isHandlingDrag()
+                && storagePanel.mouseDragged(event, dragX, dragY)) {
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
+    private void onMouseReleased(MouseButtonEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (storagePanel != null && storagePanel.isHandlingDrag()
+                && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
+            this.setDragging(false);
+            storagePanel.mouseReleased(event);
+            cir.setReturnValue(true);
+        }
+    }
+
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     private void onKeyPressed(KeyEvent event, CallbackInfoReturnable<Boolean> cir) {
         if (storagePanel != null && storagePanel.isSearchFocused()) {
             // Let Escape close the screen.
-            if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+            if (event.key() == InputConstants.KEY_ESCAPE) {
                 return;
             }
 

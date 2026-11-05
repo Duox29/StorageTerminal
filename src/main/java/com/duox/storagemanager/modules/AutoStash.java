@@ -13,7 +13,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.*;
 
@@ -47,7 +46,7 @@ public class AutoStash extends Module {
 
     public AutoStash() {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.");
-        this.getKeyMapping().setKey(InputConstants.Type.KEYSYM.getOrCreate(GLFW.GLFW_KEY_B));
+        this.getKeyMapping().setKey(InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_B));
 
         List.of(range, includeHotbar, itemsPerTick, distanceWeight, itemConcentrationWeight, spaceWeight)
                 .forEach(this::addSetting);

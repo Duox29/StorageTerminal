@@ -9,6 +9,7 @@ import com.duox.storagemanager.gui.widgets.VanillaStorageGui;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
@@ -151,8 +152,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return false;
         }
 
-        int headerDragWidth = metrics.width() - 130;
-        if (button == 0 && mouseX >= x && mouseX <= x + headerDragWidth
+        if (button == InputConstants.MOUSE_BUTTON_LEFT && mouseX >= x && mouseX <= x + metrics.width()
                 && mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
             isDragging = true;
             widgetFocused = true;
@@ -184,7 +184,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        if (isDragging && button == 0) {
+        if (isDragging && button == InputConstants.MOUSE_BUTTON_LEFT) {
             isDragging = false;
             widgetFocused = false;
             storageManager.panelX.setValue((double) x);
@@ -209,7 +209,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        if (isDragging && button == 0) {
+        if (isDragging && button == InputConstants.MOUSE_BUTTON_LEFT) {
             x = (int) (mouseX - dragOffsetX);
             y = (int) (mouseY - dragOffsetY);
             layoutWidgets();
@@ -272,5 +272,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     public boolean isSearchFocused() {
         return this.searchBox != null && this.searchBox.isFocused();
+    }
+
+    public boolean isHandlingDrag() {
+        return isDragging || itemGrid.isDraggingScrollbar();
     }
 }

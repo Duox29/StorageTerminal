@@ -12,13 +12,13 @@ import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.ToastUtils;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
 
 public class StorageScreen extends Screen {
     private int guiLeft;
@@ -211,7 +211,7 @@ public class StorageScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == GLFW.GLFW_KEY_ESCAPE) {
+        if (event.key() == InputConstants.KEY_ESCAPE) {
             this.onClose();
             return true;
         }

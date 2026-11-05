@@ -4,6 +4,7 @@ import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.ItemSerializer;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.network.chat.Component;
@@ -203,7 +204,8 @@ public class ItemGridView {
     }
 
     public boolean mouseClicked(double mouseX, double mouseY, int button, Layout layout) {
-        if (button == 0 && isOverScrollbar(mouseX, mouseY, layout) && totalRows(layout) > layout.rows()) {
+        if (button == InputConstants.MOUSE_BUTTON_LEFT && isOverScrollbar(mouseX, mouseY, layout)
+                && totalRows(layout) > layout.rows()) {
             draggingScrollbar = true;
             scrollbarDragStartY = (int) mouseY;
             scrollPositionAtDragStart = scrollPosition;
@@ -220,7 +222,7 @@ public class ItemGridView {
     }
 
     public boolean mouseDragged(double mouseY, int button, Layout layout) {
-        if (!draggingScrollbar || button != 0) {
+        if (!draggingScrollbar || button != InputConstants.MOUSE_BUTTON_LEFT) {
             return false;
         }
 
@@ -238,7 +240,7 @@ public class ItemGridView {
     }
 
     public boolean mouseReleased(int button) {
-        if (draggingScrollbar && button == 0) {
+        if (draggingScrollbar && button == InputConstants.MOUSE_BUTTON_LEFT) {
             draggingScrollbar = false;
             return true;
         }
@@ -251,8 +253,8 @@ public class ItemGridView {
 
     private void applyClick(ItemEntry entry, int button) {
         int change = switch (button) {
-            case 0 -> 64;
-            case 1 -> 1;
+            case InputConstants.MOUSE_BUTTON_LEFT -> 64;
+            case InputConstants.MOUSE_BUTTON_RIGHT -> 1;
             default -> 0;
         };
         if (change == 0) {

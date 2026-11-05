@@ -25,7 +25,7 @@ public abstract class Module {
 
         this.keyMapping = new KeyMapping(
                 name,
-                InputConstants.Type.KEYSYM,
+                InputConstants.Type.KEYBOARD,
                 InputConstants.UNKNOWN.getValue(),
                 StorageManager.KEY_CATEGORY
         );

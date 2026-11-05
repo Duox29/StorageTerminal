@@ -3,6 +3,7 @@ package com.duox.storagemanager;
 import com.duox.storagemanager.gui.UtilityGui;
 import com.duox.storagemanager.system.*;
 import com.duox.storagemanager.system.Module;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -13,7 +14,6 @@ import net.neoforged.bus.api.IEventBus;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
-import org.lwjgl.glfw.GLFW;
 
 /* Main mod entry point. */
 @Mod("storagemanager")
@@ -23,7 +23,7 @@ public class StorageManager {
 
     public static final KeyMapping OPEN_GUI_KEY = new KeyMapping(
             "Open GUI",
-            GLFW.GLFW_KEY_RIGHT_SHIFT,
+            InputConstants.KEY_RSHIFT,
             KEY_CATEGORY
     );
 

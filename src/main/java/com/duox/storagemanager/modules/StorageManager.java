@@ -5,6 +5,7 @@ import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.*;
+import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
@@ -66,7 +67,7 @@ public class StorageManager extends Module {
     public StorageManager() {
         super("StorageManager", "Manage items from cached chests.");
         this.getKeyMapping().setKey(
-                com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM.getOrCreate(org.lwjgl.glfw.GLFW.GLFW_KEY_V));
+                InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_V));
         this.addSetting(panelX);
         this.addSetting(panelY);
         this.addSetting(autoRequestRecipe);
