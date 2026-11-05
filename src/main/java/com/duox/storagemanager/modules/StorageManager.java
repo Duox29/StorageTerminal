@@ -23,6 +23,7 @@ import java.util.*;
 public class StorageManager extends Module {
     // Item id -> requested quantity.
     private final Map<String, Integer> requestQueue = new HashMap<>();
+    private final Map<String, Integer> activeRequests = new HashMap<>();
 
     // Chest position -> items to withdraw.
     private final Map<BlockPos, Map<String, Integer>> retrievalPlan = new HashMap<>();
@@ -95,6 +96,7 @@ public class StorageManager extends Module {
     @Override
     public void onDisable() {
         resetState();
+        clearRequestQueue();
     }
 
     @Override
@@ -140,7 +142,21 @@ public class StorageManager extends Module {
 
     public void clearRequestQueue() {
         requestQueue.clear();
+        activeRequests.clear();
         pendingRecipeId = null;
+        pendingRecipePlaceAll = false;
+    }
+
+    public void clearPendingRequests() {
+        requestQueue.clear();
+        if (currentState == State.IDLE && activeRequests.isEmpty()) {
+            pendingRecipeId = null;
+            pendingRecipePlaceAll = false;
+        }
+    }
+
+    public boolean isRetrieving() {
+        return currentState != State.IDLE || !activeRequests.isEmpty();
     }
 
     public int getQueued(String itemId) {
@@ -163,12 +179,22 @@ public class StorageManager extends Module {
 
     public void startRetrieval() {
         if (requestQueue.isEmpty()) {
-            sendMessage("Queue is empty.");
+            if (currentState == State.IDLE) {
+                sendMessage("Queue is empty.");
+            }
             return;
         }
 
-        captureCraftingTableContext();
-        currentState = State.PLANNING;
+        movePendingRequestsToActive();
+        if (currentState == State.IDLE) {
+            captureCraftingTableContext();
+            currentState = State.PLANNING;
+        }
+    }
+
+    private void movePendingRequestsToActive() {
+        requestQueue.forEach((id, quantity) -> activeRequests.merge(id, quantity, Integer::sum));
+        requestQueue.clear();
     }
 
     private void captureCraftingTableContext() {
@@ -199,6 +225,8 @@ public class StorageManager extends Module {
         returnToContainerPos = null;
         silentContainerId = -1;
         pendingRecipeId = null;
+        pendingRecipePlaceAll = false;
+        activeRequests.clear();
         retrievalPlan.clear();
         retrievalIterator = null;
         currentTargetEntry = null;
@@ -208,12 +236,12 @@ public class StorageManager extends Module {
         retrievalPlan.clear();
         Map<String, Map<String, Integer>> cache = ChestCache.getActiveCache();
 
-        if (requestQueue.isEmpty()) {
+        if (activeRequests.isEmpty()) {
             currentState = State.IDLE;
             return;
         }
 
-        Map<String, Integer> remainingNeeds = drainRequestQueue();
+        Map<String, Integer> remainingNeeds = drainActiveRequests();
         BlockPos playerPos = mc.player.blockPosition();
         List<String> sortedChests = new ArrayList<>(cache.keySet());
         sortedChests.sort((s1, s2) -> {
@@ -238,9 +266,9 @@ public class StorageManager extends Module {
         finalizePlanning(remainingNeeds);
     }
 
-    private Map<String, Integer> drainRequestQueue() {
-        Map<String, Integer> remainingNeeds = new HashMap<>(requestQueue);
-        requestQueue.clear();
+    private Map<String, Integer> drainActiveRequests() {
+        Map<String, Integer> remainingNeeds = new HashMap<>(activeRequests);
+        activeRequests.clear();
         return remainingNeeds;
     }
 
@@ -314,7 +342,11 @@ public class StorageManager extends Module {
     private void handleEmptyPlan() {
         sendMessage("Could not find any items to retrieve.");
         pendingRecipeId = null;
-        currentState = State.IDLE;
+        finishOrPlanNext();
+    }
+
+    private void finishOrPlanNext() {
+        currentState = activeRequests.isEmpty() ? State.IDLE : State.PLANNING;
     }
 
     private int getMinRelevantQuantity(Map<String, Integer> chestContents, Map<String, Integer> needs) {
@@ -339,7 +371,7 @@ public class StorageManager extends Module {
             currentState = State.OPENING_CHEST;
         } else {
             sendMessage("Retrieval complete.");
-            if (!requestQueue.isEmpty()) {
+            if (!activeRequests.isEmpty()) {
                 currentState = State.PLANNING;
             } else {
                 if (returnToContainerPos != null) {
@@ -348,7 +380,7 @@ public class StorageManager extends Module {
                     waitTimer = 20;
                     currentState = State.WAITING_FOR_RETURN_OPEN;
                 } else {
-                    currentState = State.IDLE;
+                    finishOrPlanNext();
                 }
             }
         }
@@ -360,12 +392,12 @@ public class StorageManager extends Module {
                 mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, pendingRecipeId, pendingRecipePlaceAll);
                 pendingRecipeId = null;
             }
-            currentState = State.IDLE;
+            finishOrPlanNext();
         } else {
             waitTimer--;
             if (waitTimer <= 0) {
-                currentState = State.IDLE;
                 pendingRecipeId = null;
+                finishOrPlanNext();
             }
         }
     }

@@ -36,6 +36,29 @@ public abstract class MixinContainerScreen extends Screen {
         }
     }
 
+    @Inject(method = "onClose", at = @At("HEAD"))
+    private void onContainerClose(CallbackInfo ci) {
+        clearPanelPendingRequests();
+    }
+
+    @Inject(method = "removed", at = @At("TAIL"))
+    private void onRemoved(CallbackInfo ci) {
+        clearPanelPendingRequests();
+    }
+
+    @Unique
+    private void clearPanelPendingRequests() {
+        if (storagePanel == null) {
+            return;
+        }
+
+        StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
+        if (sm != null) {
+            sm.clearPendingRequests();
+        }
+        storagePanel = null;
+    }
+
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
     private void onMouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY,
             CallbackInfoReturnable<Boolean> cir) {

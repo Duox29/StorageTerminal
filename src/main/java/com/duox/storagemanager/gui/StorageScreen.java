@@ -29,8 +29,6 @@ public class StorageScreen extends Screen {
     private final ItemGridView itemGrid;
     private EditBox searchBox;
 
-    private boolean keepModuleOn = false;
-
     public StorageScreen(StorageManager manager) {
         super(Component.literal("Storage Terminal"));
         this.storageManager = manager;
@@ -50,7 +48,6 @@ public class StorageScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        this.keepModuleOn = false;
 
         this.guiLeft = (this.width - metrics.width()) / 2;
         this.guiTop = (this.height - metrics.height()) / 2;
@@ -83,9 +80,9 @@ public class StorageScreen extends Screen {
                 () -> {
                     if (!storageManager.isEnabled()) {
                         storageManager.setEnabled(true);
+                    } else {
+                        storageManager.startRetrieval();
                     }
-                    storageManager.startRetrieval();
-                    this.keepModuleOn = true;
                 });
         this.addRenderableWidget(requestButton);
 
@@ -95,7 +92,9 @@ public class StorageScreen extends Screen {
         int sideBtnWidth = 40;
 
         ModernButton closeBtn = new ModernButton(closeBtnX, topButtonsY, 20, 20, Component.literal("X"), b -> {
-            storageManager.setEnabled(false);
+            if (!storageManager.isRetrieving()) {
+                storageManager.setEnabled(false);
+            }
             this.onClose();
         });
         this.addRenderableWidget(closeBtn);
@@ -156,10 +155,14 @@ public class StorageScreen extends Screen {
 
     @Override
     public void onClose() {
-        if (!keepModuleOn) {
-            storageManager.clearRequestQueue();
-        }
+        storageManager.clearPendingRequests();
         super.onClose();
+    }
+
+    @Override
+    public void removed() {
+        storageManager.clearPendingRequests();
+        super.removed();
     }
 
     @Override
