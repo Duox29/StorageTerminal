@@ -101,8 +101,9 @@ public class UtilityGui extends Screen {
         for (int i = 0; i < Math.min(moduleButtons.size(), modules.size()); i++) {
             Module module = modules.get(i);
             Button button = moduleButtons.get(i);
-            button.setMessage(Component.literal((module == selectedModule ? "> " : "") + module.getName()));
-            button.setFGColor(module.isEnabled() ? 0xFF358335 : 0xFF626262);
+            button.setMessage(Component.literal(module.getName()));
+            button.setFGColor(module == selectedModule ? StorageTheme.BTN_ACTIVE_TEXT
+                    : (module.isEnabled() ? 0xFF358335 : StorageTheme.BTN_INACTIVE_TEXT));
         }
     }
 
@@ -162,9 +163,9 @@ public class UtilityGui extends Screen {
             setting.toggle();
             ConfigManager.getInstance().save();
             b.setMessage(booleanLabel(setting));
-            b.setFGColor(setting.getValue() ? 0x55FF55 : 0xFFAAAAAA);
+            b.setFGColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
         }).bounds(x, y, WIDGET_WIDTH, WIDGET_HEIGHT).build();
-        button.setFGColor(setting.getValue() ? 0x55FF55 : 0xFFAAAAAA);
+        button.setFGColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
         return button;
     }
 

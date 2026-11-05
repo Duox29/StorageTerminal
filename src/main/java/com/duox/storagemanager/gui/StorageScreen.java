@@ -177,7 +177,7 @@ public class StorageScreen extends Screen {
     }
 
     private ItemGridView.Layout layout() {
-        return metrics.layoutAt(guiLeft, guiTop, 16, 10);
+        return metrics.layoutAt(guiLeft, guiTop, 16, 7);
     }
 
     @Override

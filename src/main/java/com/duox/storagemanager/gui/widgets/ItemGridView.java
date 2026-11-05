@@ -104,7 +104,7 @@ public class ItemGridView {
     public void render(GuiGraphicsExtractor graphics, Layout layout, int mouseX, int mouseY) {
         renderSlotBackgrounds(graphics, layout);
         renderItems(graphics, layout, mouseX, mouseY);
-        renderScrollbar(graphics, layout, mouseX, mouseY);
+        renderScrollbar(graphics, layout);
     }
 
     private void renderSlotBackgrounds(GuiGraphicsExtractor graphics, Layout layout) {
@@ -144,7 +144,7 @@ public class ItemGridView {
 
             int queued = storageManager.getQueued(entry.id);
             if (queued > 0) {
-                graphics.outline(x + 1, y + 1, slotSize - 2, slotSize - 2,
+                graphics.outline(x, y, slotSize , slotSize ,
                         StorageTheme.BTN_ACTIVE_BORDER);
             }
 
@@ -161,7 +161,7 @@ public class ItemGridView {
         }
     }
 
-    private void renderScrollbar(GuiGraphicsExtractor graphics, Layout layout, int mouseX, int mouseY) {
+    private void renderScrollbar(GuiGraphicsExtractor graphics, Layout layout) {
         int x = layout.scrollbarX();
         int y = layout.gridY();
         int width = layout.scrollbarWidth();
@@ -176,12 +176,10 @@ public class ItemGridView {
 
         int thumbHeight = thumbHeight(height, totalRows, layout.rows());
         int thumbY = y + (int) ((height - thumbHeight) * scrollPosition);
-        boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
-
         graphics.fill(x + 2, thumbY + 1, x + width - 2, thumbY + thumbHeight - 1,
-                hovered ? StorageTheme.SCROLLBAR_THUMB_HOVER : StorageTheme.SCROLLBAR_THUMB);
+                StorageTheme.SCROLLBAR_THUMB);
         graphics.outline(x + 1, thumbY, width - 2, thumbHeight,
-                hovered ? StorageTheme.SCROLLBAR_BORDER_HOVER : StorageTheme.SCROLLBAR_BORDER);
+                StorageTheme.SCROLLBAR_BORDER);
     }
 
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY, Layout layout) {

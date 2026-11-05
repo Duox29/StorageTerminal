@@ -17,7 +17,9 @@ public record StorageGridMetrics(
         int slotSize = (int) (18 * scale);
         int gridXOffset = (int) (gridXBase * scale);
         int gridYOffset = (int) (gridYBase * scale);
-        int width = gridXOffset + (cols * slotSize) + (int) (extraWidthBase * scale);
+        // Keep room for the scrollbar and the panel border at small GUI scales.
+        int rightSpace = Math.max(18, (int) (extraWidthBase * scale));
+        int width = gridXOffset + (cols * slotSize) + rightSpace;
         int height = gridYOffset + (rows * slotSize) + (int) (extraHeightBase * scale);
         return new StorageGridMetrics(width, height, cols, rows, slotSize,
                 gridXOffset, gridYOffset, (float) scale);

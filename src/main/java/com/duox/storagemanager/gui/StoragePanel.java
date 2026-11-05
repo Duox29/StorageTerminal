@@ -82,9 +82,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         this.hotbarButton = StorageUi.hotbarButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT);
 
         this.recipeButton = new ModernButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT,
-                getRecipeLabel(), b -> {
+                Component.literal("Recipe"), b -> {
                     storageManager.autoRequestRecipe.setValue(!storageManager.autoRequestRecipe.getValue());
-                    b.setMessage(getRecipeLabel());
                     StorageUi.playClick();
                 }).setActiveSupplier(() -> storageManager.autoRequestRecipe.getValue());
 
@@ -95,10 +94,6 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
         layoutWidgets();
         itemGrid.refreshFromCache();
-    }
-
-    private Component getRecipeLabel() {
-        return StorageUi.toggleLabel("Recipe", storageManager.autoRequestRecipe.getValue());
     }
 
     private void layoutWidgets() {
@@ -120,7 +115,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     private ItemGridView.Layout layout() {
-        return metrics.layoutAt(x, y, 8, 6);
+        return metrics.layoutAt(x, y, 13, 6);
     }
 
     @Override
