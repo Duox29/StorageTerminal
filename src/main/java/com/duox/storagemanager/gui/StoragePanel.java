@@ -79,10 +79,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     private void initComponents() {
         int searchW = metrics.width() - (BOTTOM_PADDING * 2);
-        this.searchBox = new EditBox(mc.font, 0, 0, searchW, 18, Component.literal("Search"));
-        this.searchBox.setMaxLength(50);
-        this.searchBox.setTextColor(0xFFFFFFFF);
-        this.searchBox.setResponder(itemGrid::setQuery);
+        this.searchBox = StorageUi.searchBox(0, 0, searchW, 18, itemGrid::setQuery);
 
         this.hotbarButton = StorageUi.hotbarButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT);
 

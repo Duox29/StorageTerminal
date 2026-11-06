@@ -59,10 +59,7 @@ public class StorageScreen extends Screen {
 
         int padding = 10;
         int searchW = metrics.width() - (padding * 2);
-        this.searchBox = new EditBox(this.font, guiLeft + padding, guiTop + 25, searchW, 18, Component.literal("Search"));
-        this.searchBox.setMaxLength(50);
-        this.searchBox.setTextColor(0xFFFFFFFF);
-        this.searchBox.setResponder(itemGrid::setQuery);
+        this.searchBox = StorageUi.searchBox(guiLeft + padding, guiTop + 25, searchW, 18, itemGrid::setQuery);
         this.addWidget(this.searchBox);
         itemGrid.setQuery("");
 

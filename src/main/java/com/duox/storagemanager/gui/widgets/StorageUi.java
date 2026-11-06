@@ -4,17 +4,32 @@ import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 
+import java.util.function.Consumer;
+
 /* Shared button and sound helpers. */
 public final class StorageUi {
+    private static final int SEARCH_MAX_LENGTH = 50;
+
     private StorageUi() {}
 
     public static void playClick() {
         Minecraft.getInstance().getSoundManager().play(
                 SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.0F));
+    }
+
+    /* Search field shared by the in-game panel and the full screen. */
+    public static EditBox searchBox(int x, int y, int width, int height, Consumer<String> responder) {
+        EditBox box = new EditBox(Minecraft.getInstance().font, x, y, width, height,
+                Component.literal("Search"));
+        box.setMaxLength(SEARCH_MAX_LENGTH);
+        box.setTextColor(0xFFFFFFFF);
+        box.setResponder(responder);
+        return box;
     }
 
     public static ModernButton hotbarButton(int x, int y, int width, int height) {

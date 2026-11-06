@@ -13,15 +13,18 @@ Xem `git log` để biết lịch sử gần nhất. Các việc đã hoàn tấ
 
 ---
 
-## 1. Tối ưu cache (chưa làm)
+## 1. Tối ưu cache
 
 Hiện `ChestCache.refreshActiveCache` duyệt toàn bộ `GLOBAL_BUFFER` mỗi 10 tick, và mỗi entry phải
 `CacheUtils.stringToPos()` — parse chuỗi thành `BlockPos` mỗi lần duyệt.
 
-### Hướng 1 — Lưu buffer bằng `BlockPos` thay vì `String` (ưu tiên)
-- Đổi `Map<String, Map<String,Integer>>` thành `Map<BlockPos, Map<String,Integer>>`.
-- Parsing chỉ còn xảy ra một lần lúc load DB.
-- Bỏ được phần lớn cấp phát object mỗi lần refresh. Không đổi hành vi.
+### Hướng 1 — Lưu buffer bằng `BlockPos` thay vì `String` — **ĐÃ LÀM**
+- `GLOBAL_BUFFER` / `ACTIVE_CACHE` giờ là `Map<BlockPos, Map<String,Integer>>`.
+- Parsing chỉ xảy ra một lần lúc load DB (`CacheUtils.tryStringToPos`, bỏ qua row hỏng).
+- `ChestScoringEngine`, `StashPlanner`, `StorageManager.calculateRetrievalPlan` bỏ hẳn parse chuỗi
+  mỗi vòng lặp.
+- `StorageManager.updateCache` copy trước khi sửa (R1) và `updateAndSync` snapshot dữ liệu.
+- `posToString` chỉ còn ở biên giới DB; schema SQLite không đổi.
 
 ### Hướng 2 — Index theo chunk (chỉ khi số chest thật sự lớn)
 - Index buffer theo `(chunkX, chunkZ)`; khi refresh chỉ duyệt các chunk giao với `Scan Range`.
@@ -171,8 +174,8 @@ dọn nhỏ (search box, `Setting.save`).
 
 ## 3. Thứ tự ưu tiên chung
 
-1. **Hướng 1 tối ưu cache** — theo đúng trình tự an toàn ở mục 1.1, làm một mình trước.
-2. **Helper đóng silent container** (`InventoryUtils.closeSilentIfOpen`).
-3. **Dọn nhỏ:** factory `EditBox`, `Setting.save` lên base class.
-4. **Hướng 3 / Hướng 4** — đánh giá lại sau khi Hướng 1 ổn định, có test tay.
+1. ~~**Hướng 1 tối ưu cache**~~ — **XONG**.
+2. ~~**Helper đóng silent container**~~ — **XONG**: `InventoryUtils.closeSilentIfOpen`.
+3. ~~**Dọn nhỏ:** factory `EditBox`, `Setting.save` lên base class~~ — **XONG**.
+4. **Hướng 3 / Hướng 4** — đánh giá lại, cần test tay.
 5. Hướng 2 / gom silent-container lifecycle — chỉ khi thực tế cần.
