@@ -456,10 +456,7 @@ public class AutoStash extends Module {
     }
 
     private void closeContainerSafe() {
-        if (mc.player != null && silentContainerId != -1
-                && mc.player.containerMenu.containerId == silentContainerId) {
-            InventoryUtils.closeContainerSilent();
-        }
+        InventoryUtils.closeSilentIfOpen(silentContainerId);
         silentContainerId = -1;
     }
 

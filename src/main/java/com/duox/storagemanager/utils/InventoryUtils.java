@@ -148,6 +148,17 @@ public class InventoryUtils {
         }
     }
 
+    /**
+     * Closes a silently opened container only while that exact menu is still the
+     * active one, so a manually opened screen is never closed by mistake.
+     */
+    public static void closeSilentIfOpen(int silentContainerId) {
+        if (mc.player != null && silentContainerId != -1
+                && mc.player.containerMenu.containerId == silentContainerId) {
+            closeContainerSilent();
+        }
+    }
+
     public static void quickMove(AbstractContainerMenu menu, int slotId) {
         sendClickPacket(menu, slotId, 0, ContainerInput.QUICK_MOVE);
     }
