@@ -10,8 +10,6 @@ import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.system.ModuleManager;
-import com.duox.storagemanager.utils.ChestCache;
-import com.duox.storagemanager.utils.ToastUtils;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -97,25 +95,12 @@ public class StorageScreen extends Screen {
         this.addRenderableWidget(closeBtn);
 
         int clearBtnX = closeBtnX - sideBtnWidth - buttonSpacing;
-        ModernButton clearCacheButton = new ModernButton(clearBtnX, topButtonsY, sideBtnWidth, 20,
-                Component.literal("Clear"), b -> {
-                    ChestCache.clearAll(this.minecraft);
-                    itemGrid.refreshFromCache();
-                    ToastUtils.sendToast("§6Storage", "Cache cleared.");
-                });
+        ModernButton clearCacheButton = StorageUi.clearCacheButton(
+                clearBtnX, topButtonsY, sideBtnWidth, 20, itemGrid::refreshFromCache);
         this.addRenderableWidget(clearCacheButton);
 
         int buildBtnX = clearBtnX - sideBtnWidth - buttonSpacing;
-        ModernButton buildCacheButton = new ModernButton(buildBtnX, topButtonsY, sideBtnWidth, 20,
-                Component.literal("Build"), b -> {
-                    AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-                    if (stash != null && !stash.isEnabled() && !stash.isCancelling()) {
-                        stash.requestCacheRebuild();
-                        stash.setEnabled(true);
-                        ToastUtils.sendToast("§bStorage", "Rebuilding cache...");
-                    }
-                    StorageUi.playClick();
-                });
+        ModernButton buildCacheButton = StorageUi.buildCacheButton(buildBtnX, topButtonsY, sideBtnWidth, 20);
         this.addRenderableWidget(buildCacheButton);
 
         int dumpBtnX = buildBtnX - sideBtnWidth - buttonSpacing;
@@ -134,11 +119,10 @@ public class StorageScreen extends Screen {
         ItemFilterCategory[] categories = ItemFilterCategory.values();
         for (int i = 0; i < categories.length; i++) {
             ItemFilterCategory cat = categories[i];
-            ModernButton catBtn = new ModernButton(startX, startY + (i * (btnHeight + 2)), btnWidth, btnHeight,
-                    Component.literal(cat.displayName), b -> {
-                        itemGrid.setCategory(cat);
-                        StorageUi.playClick();
-                    }).setActiveSupplier(() -> itemGrid.getCategory() == cat);
+            ModernButton catBtn = StorageUi.categoryButton(
+                    startX, startY + (i * (btnHeight + 2)), btnWidth, btnHeight, cat,
+                    () -> itemGrid.setCategory(cat),
+                    () -> itemGrid.getCategory() == cat);
 
             this.addRenderableWidget(catBtn);
         }

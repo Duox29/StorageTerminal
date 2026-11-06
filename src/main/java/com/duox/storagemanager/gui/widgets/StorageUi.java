@@ -1,7 +1,9 @@
 package com.duox.storagemanager.gui.widgets;
 
 import com.duox.storagemanager.modules.AutoStash;
+import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.system.ModuleManager;
+import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.EditBox;
@@ -9,6 +11,7 @@ import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
 
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /* Shared button and sound helpers. */
@@ -71,5 +74,35 @@ public final class StorageUi {
                 playClick();
             }
         });
+    }
+
+    public static ModernButton clearCacheButton(int x, int y, int width, int height, Runnable onCleared) {
+        return new ModernButton(x, y, width, height, Component.literal("Clear"), button -> {
+            ChestCache.clearAll(Minecraft.getInstance());
+            onCleared.run();
+            ToastUtils.sendToast("§6Storage", "Cache cleared.");
+            playClick();
+        });
+    }
+
+    public static ModernButton buildCacheButton(int x, int y, int width, int height) {
+        return new ModernButton(x, y, width, height, Component.literal("Build"), button -> {
+            AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+            if (stash != null && !stash.isEnabled() && !stash.isCancelling()) {
+                stash.requestCacheRebuild();
+                stash.setEnabled(true);
+                ToastUtils.sendToast("§bStorage", "Rebuilding cache...");
+            }
+            playClick();
+        });
+    }
+
+    /* Filter category button; highlights while its category is the grid's current one. */
+    public static ModernButton categoryButton(int x, int y, int width, int height, ItemFilterCategory category,
+                                              Runnable onSelect, BooleanSupplier isActive) {
+        return new ModernButton(x, y, width, height, Component.literal(category.displayName), button -> {
+            onSelect.run();
+            playClick();
+        }).setActiveSupplier(isActive);
     }
 }
