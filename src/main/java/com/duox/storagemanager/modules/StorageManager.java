@@ -45,8 +45,6 @@ public class StorageManager extends Module {
         WAITING_FOR_RETURN_OPEN
     }
 
-    private static final int CHEST_OPEN_TIMEOUT = 11;
-
     private State currentState = State.IDLE;
     private BlockPos returnToContainerPos = null;
     private int waitTimer = 0;
@@ -72,6 +70,11 @@ public class StorageManager extends Module {
     // Radius used to build the active cache.
     public final NumberSetting scanRange = new NumberSetting("Scan Range", 16.0, 4.0, 64.0, 1.0);
 
+    // Retrieval pacing. Waits are inclusive tick counts, so each minimum delays one extra tick.
+    public final NumberSetting chestOpenWait = new NumberSetting("Chest Open Wait", 11.0, 1.0, 100.0, 1.0);
+    public final NumberSetting withdrawDelay = new NumberSetting("Withdraw Delay", 0.0, 0.0, 100.0, 1.0);
+    public final NumberSetting withdrawPerTick = new NumberSetting("Withdraw/Tick", 1.0, 1.0, 27.0, 1.0);
+
     public StorageManager() {
         super("StorageManager", "Manage items from cached chests.");
         this.getKeyMapping().setKey(
@@ -86,6 +89,9 @@ public class StorageManager extends Module {
         this.addSetting(screenGridCols);
         this.addSetting(screenGridRows);
         this.addSetting(scanRange);
+        this.addSetting(chestOpenWait);
+        this.addSetting(withdrawDelay);
+        this.addSetting(withdrawPerTick);
     }
 
     @Override
@@ -503,7 +509,7 @@ public class StorageManager extends Module {
         InventoryUtils.useItemOnSilently(currentTargetEntry.getKey());
 
         currentState = State.WAITING_FOR_OPEN;
-        waitTimer = CHEST_OPEN_TIMEOUT;
+        waitTimer = chestOpenWait.getInt();
     }
 
     private void waitForContainer() {
@@ -546,6 +552,7 @@ public class StorageManager extends Module {
             waitTimer--;
             return;
         }
+        waitTimer = withdrawDelay.getInt();
 
         AbstractContainerMenu menu = mc.player.containerMenu;
         if (silentContainerId == -1 || menu.containerId != silentContainerId) {
@@ -567,7 +574,10 @@ public class StorageManager extends Module {
     }
 
     private boolean processContainerSlots(AbstractContainerMenu menu, Map<String, Integer> itemsToTake, int containerSlots) {
-        for (int i = 0; i < containerSlots; i++) {
+        int limit = withdrawPerTick.getInt();
+        int moves = 0;
+
+        for (int i = 0; i < containerSlots && moves < limit; i++) {
             ItemStack stack = menu.getSlot(i).getItem();
             if (stack.isEmpty()) continue;
 
@@ -580,10 +590,10 @@ public class StorageManager extends Module {
             if (needed <= 0) continue;
 
             if (tryWithdrawItem(menu, i, stack, itemId, needed, containerSlots)) {
-                return true;
+                moves++;
             }
         }
-        return false;
+        return moves > 0;
     }
 
     private boolean tryWithdrawItem(AbstractContainerMenu menu, int slotIndex, ItemStack stack, String itemId,
