@@ -1,6 +1,7 @@
 package com.duox.storagemanager.system.settings;
 
 import com.google.gson.JsonElement;
+import com.google.gson.JsonPrimitive;
 
 /* Base type for serializable settings. */
 public abstract class Setting<T> {
@@ -16,7 +17,11 @@ public abstract class Setting<T> {
     public T getValue() { return value; }
     public void setValue(T value) { this.value = value; }
 
-    public abstract JsonElement save();
+    /* Every concrete setting stores a plain JSON primitive. */
+    public JsonElement save() {
+        if (value instanceof Boolean b) return new JsonPrimitive(b);
+        return new JsonPrimitive((Number) value);
+    }
 
     public abstract void load(JsonElement element);
 }

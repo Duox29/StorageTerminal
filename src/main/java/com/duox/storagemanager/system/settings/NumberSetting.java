@@ -1,7 +1,6 @@
 package com.duox.storagemanager.system.settings;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonPrimitive;
 
 /* Numeric setting with bounds and a step increment. */
 public class NumberSetting extends Setting<Double> {
@@ -27,11 +26,6 @@ public class NumberSetting extends Setting<Double> {
         // Clamp and round to the nearest increment.
         double precision = 1.0 / increment;
         super.setValue(Math.round(Math.max(min, Math.min(max, val)) * precision) / precision);
-    }
-
-    @Override
-    public JsonElement save() {
-        return new JsonPrimitive(this.value);
     }
 
     @Override

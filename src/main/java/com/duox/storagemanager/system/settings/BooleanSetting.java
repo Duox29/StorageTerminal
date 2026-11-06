@@ -1,7 +1,6 @@
 package com.duox.storagemanager.system.settings;
 
 import com.google.gson.JsonElement;
-import com.google.gson.JsonPrimitive;
 
 public class BooleanSetting extends Setting<Boolean> {
     public BooleanSetting(String name, boolean defaultValue) {
@@ -10,11 +9,6 @@ public class BooleanSetting extends Setting<Boolean> {
 
     public void toggle() {
         this.value = !this.value;
-    }
-
-    @Override
-    public JsonElement save() {
-        return new JsonPrimitive(this.value);
     }
 
     @Override
