@@ -1,6 +1,5 @@
 package com.duox.storagemanager.logic;
 
-import com.duox.storagemanager.utils.CacheUtils;
 import com.duox.storagemanager.utils.ItemSerializer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
@@ -36,17 +35,16 @@ public class ChestScoringEngine {
     }
 
     public BlockPos findBestChest(String itemId, BlockPos playerPos, double maxRange,
-                                  Map<String, Map<String, Integer>> cache,
+                                  Map<BlockPos, Map<String, Integer>> cache,
                                   Set<BlockPos> processedChests,
                                   boolean forceDump) {
         BlockPos bestPos = null;
         double maxScore = -1;
         double rangeSq = maxRange * maxRange;
 
-        for (Map.Entry<String, Map<String, Integer>> entry : cache.entrySet()) {
-            String posStr = entry.getKey();
+        for (Map.Entry<BlockPos, Map<String, Integer>> entry : cache.entrySet()) {
+            BlockPos pos = entry.getKey();
             Map<String, Integer> contents = entry.getValue();
-            BlockPos pos = CacheUtils.stringToPos(posStr);
 
             double distSq = pos.distSqr(playerPos);
             if (distSq > rangeSq) {

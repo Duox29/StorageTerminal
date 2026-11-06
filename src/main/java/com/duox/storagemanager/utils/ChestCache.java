@@ -10,23 +10,23 @@ import net.minecraft.world.item.ItemStack;
 import java.util.HashMap;
 import java.util.Map;
 
-/* Global and in-range chest content caches. */
+/* Global and in-range chest content caches, keyed by immutable chest position. */
 public class ChestCache {
     /* Active-cache refresh radius used when no module setting is available yet. */
     private static final double DEFAULT_ACTIVE_RANGE = 16.0;
 
-    private static final Map<String, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
-    private static final Map<String, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
+    private static final Map<BlockPos, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
+    private static final Map<BlockPos, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
     private static long version = 0;
 
     private static String currentLoadedServerId = "";
     private static String currentLoadedDimension = "";
 
-    public static Map<String, Map<String, Integer>> getGlobalBuffer() {
+    public static Map<BlockPos, Map<String, Integer>> getGlobalBuffer() {
         return GLOBAL_BUFFER;
     }
 
-    public static Map<String, Map<String, Integer>> getActiveCache() {
+    public static Map<BlockPos, Map<String, Integer>> getActiveCache() {
         return ACTIVE_CACHE;
     }
 
@@ -59,8 +59,12 @@ public class ChestCache {
         currentLoadedServerId = CacheUtils.getSafeServerIdentifier(mc);
         currentLoadedDimension = dimensionId;
 
-        if (loaded != null && !loaded.isEmpty()) {
-            GLOBAL_BUFFER.putAll(loaded);
+        if (loaded != null) {
+            // Rows are keyed by text in SQLite; parse each position once here.
+            loaded.forEach((posStr, contents) -> {
+                BlockPos pos = parsePosition(posStr);
+                if (pos != null) GLOBAL_BUFFER.put(pos, contents);
+            });
         }
 
         if (mc.player != null) {
@@ -68,6 +72,11 @@ public class ChestCache {
         }
 
         markChanged();
+    }
+
+    /* Ignores rows written by an older or corrupted build rather than failing the load. */
+    private static BlockPos parsePosition(String posStr) {
+        return CacheUtils.tryStringToPos(posStr);
     }
 
     public static void clearAll(Minecraft mc) {
@@ -81,28 +90,30 @@ public class ChestCache {
 
     public static void updateAndSync(BlockPos pos, Map<String, Integer> newData) {
         Minecraft mc = Minecraft.getInstance();
-        String posKey = CacheUtils.posToString(pos);
-        GLOBAL_BUFFER.put(posKey, newData);
+        // Snapshot so the caches never alias a map the caller still mutates.
+        Map<String, Integer> contents = new HashMap<>(newData);
+        BlockPos key = pos.immutable();
+        GLOBAL_BUFFER.put(key, contents);
 
-        BlockPos center = mc.player != null ? mc.player.blockPosition() : pos;
+        BlockPos center = mc.player != null ? mc.player.blockPosition() : key;
         refreshActiveCache(center, scanRangeFromModule());
-        persist(mc, posKey, newData);
+        persist(mc, key, contents);
     }
 
     /* Stores the chest in the database and bumps the version. */
-    private static void persist(Minecraft mc, String posKey, Map<String, Integer> contents) {
-        CacheDatabase.getInstance(mc).upsertChest(CacheUtils.getDimensionId(mc), posKey, contents);
+    private static void persist(Minecraft mc, BlockPos pos, Map<String, Integer> contents) {
+        CacheDatabase.getInstance(mc).upsertChest(CacheUtils.getDimensionId(mc),
+                CacheUtils.posToString(pos), contents);
         markChanged();
     }
 
     public static void refreshActiveCache(BlockPos center, double range) {
         double rangeSq = range * range;
-        Map<String, Map<String, Integer>> newActive = new HashMap<>();
+        Map<BlockPos, Map<String, Integer>> newActive = new HashMap<>();
 
-        GLOBAL_BUFFER.forEach((posStr, contents) -> {
-            BlockPos chestPos = CacheUtils.stringToPos(posStr);
+        GLOBAL_BUFFER.forEach((chestPos, contents) -> {
             if (chestPos.distSqr(center) <= rangeSq) {
-                newActive.put(posStr, contents);
+                newActive.put(chestPos, contents);
             }
         });
 
@@ -138,16 +149,16 @@ public class ChestCache {
             }
         }
 
-        String posKey = CacheUtils.posToString(pos);
-        GLOBAL_BUFFER.put(posKey, contents);
+        BlockPos key = pos.immutable();
+        GLOBAL_BUFFER.put(key, contents);
 
         if (mc.player != null) {
             double scanRange = scanRangeFromModule();
-            if (pos.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
-                ACTIVE_CACHE.put(posKey, contents);
+            if (key.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
+                ACTIVE_CACHE.put(key, contents);
             }
         }
 
-        persist(mc, posKey, contents);
+        persist(mc, key, contents);
     }
 }

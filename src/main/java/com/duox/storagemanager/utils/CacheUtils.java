@@ -53,6 +53,16 @@ public class CacheUtils {
         return new BlockPos(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
     }
 
+    /** Like {@link #stringToPos} but returns null instead of throwing on a malformed row. */
+    public static BlockPos tryStringToPos(String s) {
+        if (s == null) return null;
+        try {
+            return stringToPos(s);
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            return null;
+        }
+    }
+
     public static String getDimensionId(Minecraft mc) {
         if (mc.level == null) return "unknown";
         return mc.level.dimension().identifier().toString();

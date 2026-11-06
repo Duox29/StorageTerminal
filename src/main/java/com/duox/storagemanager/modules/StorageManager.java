@@ -323,7 +323,7 @@ public class StorageManager extends Module {
 
     private void calculateRetrievalPlan() {
         retrievalPlan.clear();
-        Map<String, Map<String, Integer>> cache = ChestCache.getActiveCache();
+        Map<BlockPos, Map<String, Integer>> cache = ChestCache.getActiveCache();
 
         if (activeRequests.isEmpty()) {
             currentState = State.IDLE;
@@ -332,23 +332,20 @@ public class StorageManager extends Module {
 
         Map<String, Integer> remainingNeeds = drainActiveRequests();
         BlockPos playerPos = mc.player.blockPosition();
-        List<String> sortedChests = new ArrayList<>(cache.keySet());
-        sortedChests.sort((s1, s2) -> {
-            int score1 = getMinRelevantQuantity(cache.get(s1), remainingNeeds);
-            int score2 = getMinRelevantQuantity(cache.get(s2), remainingNeeds);
+        List<BlockPos> sortedChests = new ArrayList<>(cache.keySet());
+        sortedChests.sort((p1, p2) -> {
+            int score1 = getMinRelevantQuantity(cache.get(p1), remainingNeeds);
+            int score2 = getMinRelevantQuantity(cache.get(p2), remainingNeeds);
             if (score1 != score2) {
                 return Integer.compare(score1, score2);
             }
-            BlockPos p1 = CacheUtils.stringToPos(s1);
-            BlockPos p2 = CacheUtils.stringToPos(s2);
             return Double.compare(p1.distSqr(playerPos), p2.distSqr(playerPos));
         });
 
-        for (String chestPosStr : sortedChests) {
-            Map<String, Integer> contents = cache.get(chestPosStr);
+        for (BlockPos chestPos : sortedChests) {
+            Map<String, Integer> contents = cache.get(chestPos);
             if (contents == null || contents.isEmpty()) continue;
 
-            BlockPos chestPos = CacheUtils.stringToPos(chestPosStr);
             processChestContents(contents, chestPos, remainingNeeds);
         }
 
@@ -665,31 +662,25 @@ public class StorageManager extends Module {
     private void updateCache(String itemId, int amountTaken) {
         if (currentTargetEntry == null) return;
 
-        String chestJsonKey = CacheUtils.posToString(currentTargetEntry.getKey());
-        Map<String, Map<String, Integer>> globalCache = ChestCache.getGlobalBuffer();
-        if (globalCache.containsKey(chestJsonKey)) {
-            Map<String, Integer> chestContents = globalCache.get(chestJsonKey);
+        BlockPos chestPos = currentTargetEntry.getKey();
+        Map<String, Integer> cached = ChestCache.getGlobalBuffer().get(chestPos);
+        if (cached == null || !cached.containsKey(itemId)) return;
 
-            if (chestContents != null && chestContents.containsKey(itemId)) {
-                int currentAmount = chestContents.get(itemId);
-                int newAmount = currentAmount - amountTaken;
-
-                if (newAmount <= 0) {
-                    chestContents.remove(itemId);
-                } else {
-                    chestContents.put(itemId, newAmount);
-                }
-
-                ChestCache.updateAndSync(currentTargetEntry.getKey(), chestContents);
-            }
+        // Copy before mutating: the cached map is still shared with ACTIVE_CACHE
+        // and must not change under an in-flight iteration.
+        Map<String, Integer> chestContents = new HashMap<>(cached);
+        int remaining = chestContents.get(itemId) - amountTaken;
+        if (remaining > 0) {
+            chestContents.put(itemId, remaining);
+        } else {
+            chestContents.remove(itemId);
         }
+
+        ChestCache.updateAndSync(chestPos, chestContents);
     }
 
     private void closeSilent() {
-        if (mc.player != null && silentContainerId != -1
-                && mc.player.containerMenu.containerId == silentContainerId) {
-            InventoryUtils.closeContainerSilent();
-        }
+        InventoryUtils.closeSilentIfOpen(silentContainerId);
         silentContainerId = -1;
 
         moveToNextTarget();

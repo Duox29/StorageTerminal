@@ -19,7 +19,7 @@ public class StashPlanner {
     }
 
     public Map<BlockPos, List<Integer>> calculatePlan(LocalPlayer player, boolean includeHotbar, double range,
-                                                      Map<String, Map<String, Integer>> cache,
+                                                      Map<BlockPos, Map<String, Integer>> cache,
                                                       Set<BlockPos> processedChests,
                                                       boolean forceDump) {
         Map<BlockPos, List<Integer>> plan = new LinkedHashMap<>();
@@ -38,7 +38,7 @@ public class StashPlanner {
     }
 
     public Map<BlockPos, List<Integer>> calculatePlanForSlot(LocalPlayer player, int inventorySlot,
-                                                               double range, Map<String, Map<String, Integer>> cache,
+                                                               double range, Map<BlockPos, Map<String, Integer>> cache,
                                                                Set<BlockPos> processedChests, boolean forceDump) {
         Map<BlockPos, List<Integer>> plan = new LinkedHashMap<>();
         if (player != null && inventorySlot >= 0 && inventorySlot < 36) {
@@ -48,7 +48,7 @@ public class StashPlanner {
     }
 
     private void addInventorySlot(Map<BlockPos, List<Integer>> plan, LocalPlayer player,
-                                  int inventorySlot, double range, Map<String, Map<String, Integer>> cache,
+                                  int inventorySlot, double range, Map<BlockPos, Map<String, Integer>> cache,
                                   Set<BlockPos> processedChests, boolean forceDump) {
         ItemStack stack = player.getInventory().getItem(inventorySlot);
         if (stack.isEmpty()) return;
