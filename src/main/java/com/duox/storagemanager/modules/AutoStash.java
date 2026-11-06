@@ -33,6 +33,11 @@ public class AutoStash extends Module {
     private final NumberSetting distanceWeight = new NumberSetting("Distance Weight", 0.2, 0.0, 1.0, 0.1);
     private final NumberSetting itemConcentrationWeight = new NumberSetting("Item Concentration Weight", 0.4, 0.0, 1.0, 0.1);
     private final NumberSetting spaceWeight = new NumberSetting("Space Weight", 0.4, 0.0, 1.0, 0.1);
+    private final BooleanSetting sendToasts = new BooleanSetting("Send Toasts", true);
+    private final NumberSetting chestOpenWait = new NumberSetting("Chest Open Wait", DEFAULT_WAIT_TICKS,
+            1.0, 100.0, 1.0);
+    private final NumberSetting syncWait = new NumberSetting("Sync Wait", SERVER_SYNC_WAIT_TICKS,
+            1.0, 100.0, 1.0);
     private final List<BlockPos> scanQueue = new ArrayList<>();
     private final Set<BlockPos> processedChests = new HashSet<>();
     private State currentState = State.IDLE;
@@ -53,7 +58,8 @@ public class AutoStash extends Module {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.");
         this.getKeyMapping().setKey(InputConstants.Type.KEYBOARD.getOrCreate(InputConstants.KEY_B));
 
-        List.of(range, includeHotbar, itemsPerTick, distanceWeight, itemConcentrationWeight, spaceWeight)
+        List.of(range, includeHotbar, itemsPerTick, distanceWeight, itemConcentrationWeight, spaceWeight,
+                        sendToasts, chestOpenWait, syncWait)
                 .forEach(this::addSetting);
     }
 
@@ -63,6 +69,10 @@ public class AutoStash extends Module {
 
     public boolean isIncludeHotbar() {
         return includeHotbar.getValue();
+    }
+
+    public boolean isSendToasts() {
+        return sendToasts.getValue();
     }
 
     public void toggleIncludeHotbar() {
@@ -381,7 +391,7 @@ public class AutoStash extends Module {
         }
 
         if (slotsToMove.isEmpty()) {
-            waitTimer = SERVER_SYNC_WAIT_TICKS;
+            waitTimer = syncWait.getInt();
             return State.WAITING_FOR_UPDATE;
         }
 
@@ -416,7 +426,7 @@ public class AutoStash extends Module {
         if (currentTarget == null) return State.IDLE;
 
         openContainerSilent(currentTarget);
-        this.waitTimer = DEFAULT_WAIT_TICKS;
+        this.waitTimer = chestOpenWait.getInt();
         return nextState;
     }
 

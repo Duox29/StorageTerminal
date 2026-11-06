@@ -1,5 +1,7 @@
 package com.duox.storagemanager.utils;
 
+import com.duox.storagemanager.modules.AutoStash;
+import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.components.toasts.ToastManager;
@@ -12,6 +14,9 @@ public class ToastUtils {
     }
 
     public static void sendToast(String title, Component message) {
+        AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+        if (autoStash != null && !autoStash.isSendToasts()) return;
+
         Minecraft mc = Minecraft.getInstance();
         ToastManager toastManager = mc.gui.toastManager();
 
