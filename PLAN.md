@@ -36,7 +36,93 @@ Hiện `ChestCache.refreshActiveCache` duyệt toàn bộ `GLOBAL_BUFFER` mỗi 
 - `updateFromContainerMenu` / `updateAndSync` không xoá entry khi chest ra ngoài `Scan Range`,
   nên có thể trễ tới 10 tick. Gọi `ACTIVE_CACHE.remove(posKey)` ngay tại chỗ.
 
-**Đề xuất:** làm Hướng 1 + 3 + 4 trước (sửa nhỏ, không đổi kiến trúc).
+**Đề xuất ban đầu (đã sửa, xem mục 1.1):** làm Hướng 1 + 3 + 4.
+
+---
+
+## 1.1 Phân tích rủi ro của các hướng tối ưu
+
+Kết quả rà soát lại toàn bộ đường đọc/ghi cache. Một số hướng tưởng là "sửa nhỏ" nhưng thực chất
+thay đổi hành vi và có thể gây lỗi.
+
+### Rủi ro thật
+
+#### R1. Chia sẻ object giữa `GLOBAL_BUFFER` và `ACTIVE_CACHE`
+
+`StorageManager.updateCache` (line 665-686) lấy `chestContents` từ `GLOBAL_BUFFER`, **sửa mutation
+tại chỗ** (`remove`/`put`), rồi truyền chính object đó vào `ChestCache.updateAndSync`, nơi lại
+`GLOBAL_BUFFER.put(posKey, newData)` bằng cùng reference. `refreshActiveCache` cũng đưa cùng object
+vào `ACTIVE_CACHE`. Kết quả: hai map chia sẻ reference, sửa một bên là bên kia đổi theo.
+
+- Đây là lỗi **đã có sẵn**, không do refactor sinh ra.
+- Khi đổi key type rất dễ viết `new HashMap<>(contents)` ở nhánh này mà quên nhánh kia → hai nguồn
+  dữ liệu lệch nhau.
+- **Bắt buộc:** snapshot (`Map.copyOf`) tại ranh giới `updateAndSync`; `updateCache` tạo bản sao mới
+  thay vì sửa in-place.
+
+#### R2. `ConcurrentModificationException` tiềm tàng
+
+`updateCache` được gọi trong lúc đang rút đồ và sửa map trước khi `refreshActiveCache` duyệt
+`GLOBAL_BUFFER`. Hiện không lỗi vì `updateAndSync` **thay thế** map trước khi duyệt. Nếu refactor
+làm `refreshActiveCache` duyệt đúng collection đang bị sửa → CME ngay trên main thread.
+
+#### R3. `BlockPos` là `Vec3i` — `equals`/`hashCode` không theo kiểu
+
+`Vec3i.equals` so tọa độ, không so class. `BlockPos` và `Vec3i` cùng tọa độ sẽ `equals` nhau. Hiện
+mọi nguồn đều là `BlockPos` nên an toàn, nhưng phải chắc không có `Vec3i` lọt vào map, và key phải
+bất biến (`pos.immutable()`) vì `BlockPos.MutableBlockPos` là mutable và `hashCode` thay đổi.
+
+#### R4. Hướng 4 (`ACTIVE_CACHE.remove` ngay) có thể gỡ nhầm chest còn trong tầm
+
+`updateFromContainerMenu` được gọi từ `ManualContainerTracker` khi người chơi **mở chest thủ công**.
+Nếu vị trí người chơi sai lệch (đổi chiều, teleport trong lúc sync) → chest bị gỡ khỏi active dù
+vẫn trong tầm. Không nên thêm `remove` vào đường manual; chỉ làm ở đường destroy/replace.
+
+#### R5. Hướng 3 ("chỉ refresh khi di chuyển > 1 block") có thể **bỏ sót cập nhật**
+
+Người chơi đứng yên nhưng dữ liệu đổi (AutoStash Build cache, người khác đặt chest trong tầm).
+So sánh chỉ theo vị trí người chơi sẽ **không refresh** → hiển thị sai tới khi đi lại.
+
+- Điều kiện phải là: *(người chơi di chuyển)* **hoặc** *(GLOBAL_BUFFER vừa thay đổi)*.
+- `forceRefreshActiveCache()` được gọi trực tiếp từ nhiều chỗ (`StoragePanel` ctor,
+  `StorageScreen` ctor, `ModuleManager` tick, `AutoStash`). Nếu gate đặt trong `refreshActiveCache`
+  thì các chỗ này **hết hiệu lực**. Cần tách `refreshActiveCache` (unconditional) và
+  `refreshActiveCacheIfNeeded` (gated).
+
+#### R6. Hướng 1 đổi public API — vỡ 6 điểm gọi
+
+Các chỗ đang dùng key `String`:
+- `StorageManager` line 302 (`getGlobalBuffer().size()`), 326, 669
+- `StorageManager` line 342-343, 351 (sort/parse `stringToPos`)
+- `ChestScoringEngine` line 46 (loop `Map.Entry<String, ...>`)
+- `ItemGridView` line 70
+- `MixinRecipeBookComponent` line 195
+- `ManualContainerTracker` (gián tiếp qua `updateFromContainerMenu`)
+
+Phải sửa **đồng bộ**, rất dễ sót một chỗ.
+
+### Rủi ro thấp (chỉ khi làm ẩu)
+
+| # | Rủi ro | Ghi chú |
+| --- | --- | --- |
+| R7 | `CacheDatabase.upsertChest` vẫn nhận `String` | `persist` phải `posToString` tại biên giới DB; không đổi schema. Đổi luôn sang `BlockPos` là viết lại cả layer DB. |
+| R8 | `StorageManager.updateCache` tra bằng chuỗi | line 668-671, phải đổi cùng lúc với Hướng 1. |
+| R9 | `ChestScoringEngine` chọn chest theo score | Khi đổi key phải giữ nguyên thứ tự score, không đổi kết quả chọn chest. |
+| R10 | `CacheUtils.stringToPos` thành dead code | Trước khi xoá, kiểm tra layer DB và recipe mixin. |
+
+### Thứ tự triển khai an toàn
+
+1. **Chỉ Hướng 1**, tách biệt hoàn toàn:
+   - Thêm map `BlockPos` song song, giữ nguyên API `String`.
+   - So khớp `ACTIVE_CACHE` cũ/mới (log hoặc `runClient`) cho tới khi trùng hoàn toàn.
+   - Chỉ khi khớp mới xoá API cũ.
+2. **Đánh giá lại Hướng 3 và 4 riêng**, sau khi Hướng 1 đã ổn định.
+   - Hướng 3 cần sửa điều kiện gate như R5; phải tách hàm gated/unconditional.
+   - Hướng 4 không áp dụng cho đường manual (R4).
+3. Hướng 2 chỉ cân nhắc nếu cache thực tế vượt vài nghìn chest.
+
+**Sửa lại đề xuất:** không làm Hướng 1+3+4 cùng lúc. Hướng 3 và 4 là hai chỗ dễ gây bug nhất vì
+chúng thay đổi **hành vi**, không chỉ cấu trúc dữ liệu.
 
 ---
 
@@ -80,3 +166,13 @@ Nguồn: một report đọc-only trên 37 file Java. Dưới đây là kết qu
 Report nhìn chung là hợp lý nhưng **chỉ một mục High là thực sự đáng làm ngay**, và câu "exact
 duplicate" hơi quá đà. Nên ưu tiên: tối ưu cache (mục 1) → gom helper đóng silent container →
 dọn nhỏ (search box, `Setting.save`).
+
+---
+
+## 3. Thứ tự ưu tiên chung
+
+1. **Hướng 1 tối ưu cache** — theo đúng trình tự an toàn ở mục 1.1, làm một mình trước.
+2. **Helper đóng silent container** (`InventoryUtils.closeSilentIfOpen`).
+3. **Dọn nhỏ:** factory `EditBox`, `Setting.save` lên base class.
+4. **Hướng 3 / Hướng 4** — đánh giá lại sau khi Hướng 1 ổn định, có test tay.
+5. Hướng 2 / gom silent-container lifecycle — chỉ khi thực tế cần.
