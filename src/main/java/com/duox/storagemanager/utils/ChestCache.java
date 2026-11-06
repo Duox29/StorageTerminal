@@ -12,8 +12,8 @@ import java.util.Map;
 
 /* Global and in-range chest content caches. */
 public class ChestCache {
-    /* Active-cache refresh radius used before/without a module-supplied scan range. */
-    private static final double DEFAULT_ACTIVE_RANGE = 64.0;
+    /* Active-cache refresh radius used when no module setting is available yet. */
+    private static final double DEFAULT_ACTIVE_RANGE = 16.0;
 
     private static final Map<String, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
     private static final Map<String, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
@@ -64,7 +64,7 @@ public class ChestCache {
         }
 
         if (mc.player != null) {
-            refreshActiveCache(mc.player.blockPosition(), DEFAULT_ACTIVE_RANGE);
+            refreshActiveCache(mc.player.blockPosition(), scanRangeFromModule());
         }
 
         markChanged();
@@ -85,7 +85,7 @@ public class ChestCache {
         GLOBAL_BUFFER.put(posKey, newData);
 
         BlockPos center = mc.player != null ? mc.player.blockPosition() : pos;
-        refreshActiveCache(center, DEFAULT_ACTIVE_RANGE);
+        refreshActiveCache(center, scanRangeFromModule());
         persist(mc, posKey, newData);
     }
 
@@ -121,7 +121,7 @@ public class ChestCache {
 
     private static double scanRangeFromModule() {
         StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
-        return sm != null ? sm.scanRange.getValue() : 16.0;
+        return sm != null ? sm.scanRange.getValue() : DEFAULT_ACTIVE_RANGE;
     }
 
     public static void updateFromContainerMenu(BlockPos pos, AbstractContainerMenu menu, Minecraft mc) {

@@ -13,6 +13,7 @@ import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.ToastUtils;
 import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
@@ -33,6 +34,10 @@ public class StorageScreen extends Screen {
         super(Component.literal("Storage Terminal"));
         this.storageManager = manager;
         this.storageManager.ensureCacheLoaded();
+        AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+        if (autoStash != null && Minecraft.getInstance().player != null) {
+            autoStash.forceRefreshActiveCache();
+        }
         this.itemGrid = new ItemGridView(manager);
         applyScaleSettings();
     }

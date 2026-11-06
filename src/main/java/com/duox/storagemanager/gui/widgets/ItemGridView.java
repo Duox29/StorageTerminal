@@ -63,11 +63,11 @@ public class ItemGridView {
         }
     }
 
-    /* Re-aggregates all cached chests. */
+    /* Re-aggregates the chests inside the active scan range. */
     public void refreshFromCache() {
         lastCacheVersion = ChestCache.getVersion();
         Map<String, Integer> totals = new HashMap<>();
-        for (Map<String, Integer> contents : ChestCache.getGlobalBuffer().values()) {
+        for (Map<String, Integer> contents : ChestCache.getActiveCache().values()) {
             for (Map.Entry<String, Integer> entry : contents.entrySet()) {
                 totals.merge(entry.getKey(), entry.getValue(), Integer::sum);
             }
