@@ -89,7 +89,9 @@ public final class StorageDragController {
 
     /** Returns true when vanilla must not process this release. */
     public boolean mouseReleased(MouseButtonEvent event, AbstractContainerScreen<?> screen, StoragePanel panel) {
-        if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) return false;
+        if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) {
+            return panel.isMouseOver(event.x(), event.y()) && !screen.getMenu().getCarried().isEmpty();
+        }
         if (source == Source.NONE) {
             return panel.isMouseOver(event.x(), event.y()) && !screen.getMenu().getCarried().isEmpty();
         }
@@ -116,11 +118,7 @@ public final class StorageDragController {
                         && sameStack(mc.player.getInventory().getItem(inventorySlot), inventoryStack)) {
                     StorageTransferCoordinator.stash(inventorySlot, inventoryStack);
                 }
-            } else if (!dragging && !panel.isMouseOver(event.x(), event.y())) {
-                clear();
-                return false;
-            } else if (dragging && !panel.isMouseOver(event.x(), event.y())
-                    && insideVanillaContainer(screen, event.x(), event.y())) {
+            } else if (!panel.isMouseOver(event.x(), event.y())) {
                 clear();
                 return false;
             } else if (restoreSourceStack(screen)) {
@@ -164,11 +162,6 @@ public final class StorageDragController {
             return hovered;
         int empty = InventoryUtils.findEmptyPlayerSlot(screen.getMenu(), panelItem.stack());
         return empty < 0 ? null : screen.getMenu().getSlot(empty);
-    }
-
-    private boolean insideVanillaContainer(AbstractContainerScreen<?> screen, double x, double y) {
-        return x >= screen.getLeftPos() && x < screen.getLeftPos() + screen.getImageWidth()
-                && y >= screen.getTopPos() && y < screen.getTopPos() + screen.getImageHeight();
     }
 
     public void render(GuiGraphicsExtractor graphics, AbstractContainerScreen<?> screen,

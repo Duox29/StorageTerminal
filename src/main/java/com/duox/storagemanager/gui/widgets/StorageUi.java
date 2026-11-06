@@ -39,7 +39,7 @@ public final class StorageUi {
     public static ModernButton autoStashButton(int x, int y, int width, int height) {
         return new ModernButton(x, y, width, height, Component.literal("AutoStash"), button -> {
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-            if (stash != null) {
+            if (stash != null && !stash.isEnabled() && !stash.isCancelling()) {
                 stash.setEnabled(true);
                 playClick();
             }

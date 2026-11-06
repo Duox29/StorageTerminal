@@ -79,6 +79,9 @@ public class ModuleManager {
                             mc.gui.setScreen(new StorageScreen(sm));
                         }
                     } else {
+                        if (module instanceof AutoStash && module.isEnabled()) {
+                            StorageTransferCoordinator.cancelForDisable();
+                        }
                         module.setEnabled(!module.isEnabled());
                         toggledModules.add(module);
                     }
@@ -98,7 +101,9 @@ public class ModuleManager {
             }
 
             moduleMap.values().stream()
-                    .filter(Module::isEnabled)
+                    .filter(module -> module.isEnabled()
+                            || module instanceof StorageManager storage && storage.isCancelling()
+                            || module instanceof AutoStash stash && stash.isCancelling())
                     .forEach(Module::onTick);
             StorageTransferCoordinator.tick();
         } else {

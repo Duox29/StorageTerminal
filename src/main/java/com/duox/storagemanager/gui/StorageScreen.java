@@ -112,7 +112,7 @@ public class StorageScreen extends Screen {
         ModernButton buildCacheButton = new ModernButton(buildBtnX, topButtonsY, sideBtnWidth, 20,
                 Component.literal("Build"), b -> {
                     AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-                    if (stash != null) {
+                    if (stash != null && !stash.isEnabled() && !stash.isCancelling()) {
                         stash.requestCacheRebuild();
                         stash.setEnabled(true);
                         ToastUtils.sendToast("§bStorage", "Rebuilding cache...");

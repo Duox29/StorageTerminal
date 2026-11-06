@@ -10,9 +10,11 @@ import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.screens.inventory.CraftingScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.level.block.CraftingTableBlock;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -31,7 +33,7 @@ public final class StorageTransferCoordinator {
     private static Screen deferredScreen;
     private static int restoringScreenTimeout;
     private static boolean gestureHeld;
-    private static boolean activeDrag;
+    private static Transfer active;
 
     private StorageTransferCoordinator() {}
 
@@ -53,13 +55,18 @@ public final class StorageTransferCoordinator {
             ToastUtils.sendToast("§6Storage Terminal", "Drag cancelled: inventory slot changed.");
             return false;
         }
+        if (sameStash(active, inventorySlot, expectedStack)
+                || pending.stream().anyMatch(transfer -> sameStash(transfer, inventorySlot, expectedStack))) {
+            ToastUtils.sendToast("§6Storage Terminal", "This stack is already queued.");
+            return true;
+        }
         pending.addLast(new Transfer(ItemSerializer.serialize(expectedStack), expectedStack.getCount(),
                 inventorySlot, true, expectedStack.copy(), null, null, false));
         return true;
     }
 
     public static void clear() {
-        if (activeDrag) {
+        if (active != null && active.requests() == null) {
             StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             if (storage != null) storage.cancelTargetedRetrieval();
@@ -71,7 +78,20 @@ public final class StorageTransferCoordinator {
         deferredScreen = null;
         restoringScreenTimeout = 0;
         gestureHeld = false;
-        activeDrag = false;
+        active = null;
+    }
+
+    /** A module toggle cancels the batch but keeps the visible screen's return context. */
+    public static void cancelForDisable() {
+        ReturnContext context = returnContext;
+        clear();
+        returnContext = context;
+    }
+
+    private static boolean sameStash(Transfer transfer, int slot, ItemStack stack) {
+        return transfer != null && transfer.stash() && transfer.inventorySlot() == slot
+                && transfer.expectedStack().getCount() == stack.getCount()
+                && ItemStack.isSameItemSameComponents(transfer.expectedStack(), stack);
     }
 
     public static void setGestureHeld(boolean held) {
@@ -117,8 +137,8 @@ public final class StorageTransferCoordinator {
         if (restoringScreen != null) return;
         StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
         AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-        if (activeDrag && (storage == null || !storage.isRetrieving())
-                && (autoStash == null || !autoStash.isEnabled())) activeDrag = false;
+        if (active != null && (storage == null || !storage.isRetrieving())
+                && (autoStash == null || !autoStash.isEnabled() && !autoStash.isCancelling())) active = null;
         if (pending.isEmpty()) {
             // A carried stack must not strand the previous container screen.
             // Pending transfers still wait for an empty cursor below, but once
@@ -129,12 +149,12 @@ public final class StorageTransferCoordinator {
         if (!mc.player.containerMenu.getCarried().isEmpty()) return;
 
         if (storage == null || !storage.isEnabled() || autoStash == null
-                || storage.isRetrieving() || autoStash.isEnabled()) {
+                || storage.isRetrieving() || autoStash.isEnabled() || autoStash.isCancelling()) {
             return;
         }
 
         Transfer next = pending.removeFirst();
-        ReturnContext candidate = returnContext == null && next.requests() == null
+        ReturnContext candidate = returnContext == null && next.recipe() == null
                 ? capturePreviousContainer() : null;
         boolean started = next.requests() != null
                 ? storage.startQueuedRetrieval(next.requests(), next.recipe(), next.placeAll())
@@ -143,7 +163,7 @@ public final class StorageTransferCoordinator {
                 : storage.startTargetedRetrieval(next.itemId(), next.quantity(),
                         next.inventorySlot(), next.expectedStack());
         if (started) {
-            activeDrag = next.requests() == null;
+            active = next;
             if (returnContext == null) returnContext = candidate;
         } else {
             ToastUtils.sendToast("§6Storage Terminal", "Drag transfer cancelled: items or slot changed.");
@@ -160,7 +180,7 @@ public final class StorageTransferCoordinator {
 
         BlockPos pos = ManualContainerTracker.getConfirmedManualContainer(
                 mc.player.containerMenu.containerId);
-        if (pos != null && !InventoryUtils.isStorable(mc.level.getBlockEntity(pos))) pos = null;
+        if (pos != null && !canReopen(screen, pos)) pos = null;
         // For other container screens, remember to close the stale GUI once the
         // silent menu is closed. Only a manually opened chest can be reopened.
         return new ReturnContext(screen, pos);
@@ -171,14 +191,15 @@ public final class StorageTransferCoordinator {
         Minecraft mc = Minecraft.getInstance();
         StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
         AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-        if ((storage != null && storage.isRetrieving()) || (stash != null && stash.isEnabled())) return;
+        if ((storage != null && storage.isRetrieving())
+                || (stash != null && (stash.isEnabled() || stash.isCancelling()))) return;
 
         ReturnContext context = returnContext;
         returnContext = null;
         if (context.pos() != null && mc.player != null
                 && mc.gui.screen() == context.screen()
                 && mc.player.containerMenu == mc.player.inventoryMenu
-                && InventoryUtils.isStorable(mc.level.getBlockEntity(context.pos()))) {
+                && canReopen(context.screen(), context.pos())) {
             // With silent mode off, the server's new screen replaces the stale chest GUI.
             // Mark this as a manual-screen restore so its cache is refreshed on open.
             restoringScreen = context.screen();
@@ -193,5 +214,13 @@ public final class StorageTransferCoordinator {
     private static void closeStaleScreen(Minecraft mc) {
         mc.gui.setScreen(null);
         ToastUtils.sendToast("§6Storage Terminal", "Could not reopen the previous container.");
+    }
+
+    private static boolean canReopen(Screen screen, BlockPos pos) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return false;
+        return screen instanceof CraftingScreen
+                ? mc.level.getBlockState(pos).getBlock() instanceof CraftingTableBlock
+                : InventoryUtils.isStorable(mc.level.getBlockEntity(pos));
     }
 }

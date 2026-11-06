@@ -92,7 +92,16 @@ public class AutoStash extends Module {
     }
 
     public boolean isSilentMode() {
-        return isEnabled() && currentState != State.IDLE && currentState != State.WAITING_FOR_TRANSFER;
+        return (isEnabled() || cancelTargeted) && currentState != State.IDLE && currentState != State.WAITING_FOR_TRANSFER;
+    }
+
+    public boolean isWaitingForSilentOpen() {
+        return isSilentMode() && (currentState == State.WAITING_FOR_SCAN_OPEN
+                || currentState == State.WAITING_FOR_STASH_OPEN);
+    }
+
+    public boolean isCancelling() {
+        return cancelTargeted;
     }
 
     public void cancelTargetedStash() {
@@ -101,6 +110,7 @@ public class AutoStash extends Module {
 
     @Override
     public void onEnable() {
+        if (cancelTargeted) return;
         if (!validateEnvironment()) {
             this.setEnabled(false);
             return;
@@ -126,6 +136,11 @@ public class AutoStash extends Module {
 
     @Override
     public void onDisable() {
+        if (mc.player != null && mc.level != null && silentContainerId == -1 && waitTimer > 0
+                && (currentState == State.WAITING_FOR_SCAN_OPEN || currentState == State.WAITING_FOR_STASH_OPEN)) {
+            cancelTargeted = true;
+            return;
+        }
         if (silentContainerId != -1 && mc.player != null
                 && mc.player.containerMenu.containerId == silentContainerId) closeContainerSafe();
         resetState();
@@ -139,10 +154,12 @@ public class AutoStash extends Module {
     @Override
     public void onWorldChanged() {
         if (targetedInventorySlot != null && isEnabled()) setEnabled(false);
-        else {
-            resetState();
-            this.isDumpMode = false;
-        }
+        resetState();
+        this.isDumpMode = false;
+        targetedInventorySlot = null;
+        targetedExpectedRemainingCount = 0;
+        targetedExpectedStack = ItemStack.EMPTY;
+        cancelTargeted = false;
     }
 
     private void resetState() {
@@ -167,6 +184,7 @@ public class AutoStash extends Module {
         stashPlanner = new StashPlanner(engine);
     }
     public void startDumpAll() {
+        if (isEnabled() || cancelTargeted) return;
         this.isDumpMode = true;
         this.setEnabled(true);
     }
@@ -174,7 +192,8 @@ public class AutoStash extends Module {
     public void onTick() {
         if (!validateEnvironment()) return;
         if (cancelTargeted) {
-            if (currentState == State.WAITING_FOR_STASH_OPEN && silentContainerId == -1 && waitTimer > 0) {
+            if ((currentState == State.WAITING_FOR_STASH_OPEN || currentState == State.WAITING_FOR_SCAN_OPEN)
+                    && silentContainerId == -1 && waitTimer > 0) {
                 currentState = handleWaitingForContainer(State.STASHING_ITEMS, State.CLOSING_AFTER_STASH);
             } else {
                 setEnabled(false);

@@ -141,8 +141,7 @@ public class MixinRecipeBookComponent {
 
         if (addedAny) {
             // Place the recipe after retrieval finishes.
-            sm.setPendingRecipe(id, placeAll);
-            sm.startRetrieval();
+            sm.startRetrieval(id, placeAll);
         }
     }
 

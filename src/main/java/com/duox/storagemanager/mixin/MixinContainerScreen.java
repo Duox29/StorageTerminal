@@ -71,7 +71,9 @@ public abstract class MixinContainerScreen extends Screen {
 
     @Inject(method = "removed", at = @At("TAIL"))
     private void onRemoved(CallbackInfo ci) {
-        if (StorageTransferCoordinator.consumeRestoredScreenRemoval((Screen) (Object) this)) {
+        StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
+        if (StorageTransferCoordinator.consumeRestoredScreenRemoval((Screen) (Object) this)
+                || sm != null && sm.isRestoringCraftingScreen()) {
             if (storageDragController != null) storageDragController.clear();
             storageDragController = null;
             storagePanel = null;
@@ -104,14 +106,12 @@ public abstract class MixinContainerScreen extends Screen {
     private void onMouseClicked(MouseButtonEvent event, boolean doubleClick,
             CallbackInfoReturnable<Boolean> cir) {
         if (hasStaleMenu()) {
-            if (!doubleClick && event.button() == InputConstants.MOUSE_BUTTON_LEFT
-                    && storagePanel != null && storageDragController != null) {
-                if (storagePanel.isMouseOver(event.x(), event.y())) {
-                    storagePanel.mouseClicked(event, doubleClick);
-                } else {
-                    storageDragController.beginInventory(event,
-                            (AbstractContainerScreen<?>) (Object) this, storagePanel, true);
-                }
+            if (storagePanel.isMouseOver(event.x(), event.y())) {
+                storagePanel.mouseClicked(event, doubleClick);
+                this.setFocused(storagePanel);
+            } else if (!doubleClick && storageDragController != null) {
+                storageDragController.beginInventory(event,
+                        (AbstractContainerScreen<?>) (Object) this, storagePanel, true);
             }
             cir.setReturnValue(true);
             return;

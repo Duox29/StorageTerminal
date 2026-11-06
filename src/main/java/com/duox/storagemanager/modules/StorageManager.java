@@ -90,7 +90,7 @@ public class StorageManager extends Module {
 
     @Override
     public void onEnable() {
-        if (mc.player == null)
+        if (mc.player == null || cancelTargeted)
             return;
 
         if (!requestQueue.isEmpty()) {
@@ -102,7 +102,13 @@ public class StorageManager extends Module {
 
     @Override
     public void onDisable() {
-        StorageTransferCoordinator.clear();
+        StorageTransferCoordinator.cancelForDisable();
+        if (mc.player != null && mc.level != null && currentState == State.WAITING_FOR_OPEN
+                && silentContainerId == -1 && waitTimer > 0) {
+            cancelTargeted = true;
+            clearRequestQueue();
+            return;
+        }
         if (mc.player != null && silentContainerId != -1
                 && mc.player.containerMenu.containerId == silentContainerId) {
             InventoryUtils.closeContainerSilent();
@@ -190,6 +196,10 @@ public class StorageManager extends Module {
         if (targetedInventorySlot >= 0) cancelTargeted = true;
     }
 
+    public boolean isCancelling() {
+        return cancelTargeted;
+    }
+
     public int getQueued(String itemId) {
         return requestQueue.getOrDefault(itemId, 0);
     }
@@ -203,12 +213,11 @@ public class StorageManager extends Module {
         }
     }
 
-    public void setPendingRecipe(RecipeDisplayId id, boolean placeAll) {
-        this.pendingRecipeId = id;
-        this.pendingRecipePlaceAll = placeAll;
+    public void startRetrieval() {
+        startRetrieval(null, false);
     }
 
-    public void startRetrieval() {
+    public void startRetrieval(RecipeDisplayId recipe, boolean placeAll) {
         if (requestQueue.isEmpty()) {
             if (currentState == State.IDLE) {
                 sendMessage("Queue is empty.");
@@ -216,10 +225,8 @@ public class StorageManager extends Module {
             return;
         }
 
-        StorageTransferCoordinator.retrieveRequests(requestQueue, pendingRecipeId, pendingRecipePlaceAll);
+        StorageTransferCoordinator.retrieveRequests(requestQueue, recipe, placeAll);
         requestQueue.clear();
-        pendingRecipeId = null;
-        pendingRecipePlaceAll = false;
     }
 
     public boolean startQueuedRetrieval(Map<String, Integer> requests, RecipeDisplayId recipe, boolean placeAll) {
@@ -228,7 +235,8 @@ public class StorageManager extends Module {
         activeRequests.putAll(requests);
         pendingRecipeId = recipe;
         pendingRecipePlaceAll = placeAll;
-        captureCraftingTableContext();
+        returnToContainerPos = null;
+        if (recipe != null) captureCraftingTableContext();
         currentState = State.PLANNING;
         return true;
     }
@@ -263,7 +271,7 @@ public class StorageManager extends Module {
         targetedTransferredCount = 0;
         targetedExpectedStack = expectedStack.copy();
         activeRequests.put(itemId, quantity);
-        captureCraftingTableContext();
+        returnToContainerPos = null;
         currentState = State.PLANNING;
         return true;
     }
@@ -274,7 +282,8 @@ public class StorageManager extends Module {
     }
 
     private void captureCraftingTableContext() {
-        if (mc.gui.screen() instanceof CraftingScreen) {
+        if (mc.player != null && mc.gui.screen() instanceof CraftingScreen screen
+                && screen.getMenu() == mc.player.containerMenu) {
             HitResult hit = mc.hitResult;
             if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
                 BlockHitResult blockHit = (BlockHitResult) hit;
@@ -478,7 +487,8 @@ public class StorageManager extends Module {
     }
 
     private void handleWaitingForReturn() {
-        if (mc.gui.screen() instanceof CraftingScreen) {
+        if (mc.player != null && mc.gui.screen() instanceof CraftingScreen screen
+                && screen.getMenu() == mc.player.containerMenu) {
             if (pendingRecipeId != null && mc.player != null) {
                 mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, pendingRecipeId, pendingRecipePlaceAll);
                 pendingRecipeId = null;
@@ -523,7 +533,19 @@ public class StorageManager extends Module {
     }
 
     public boolean isSilentMode() {
-        return this.isEnabled() && (currentState != State.IDLE && currentState != State.PLANNING && currentState != State.WAITING_FOR_RETURN_OPEN);
+        return (this.isEnabled() || cancelTargeted) && (currentState != State.IDLE
+                && currentState != State.PLANNING && currentState != State.WAITING_FOR_RETURN_OPEN);
+    }
+
+    public boolean isWaitingForSilentOpen() {
+        return currentState == State.WAITING_FOR_OPEN && isSilentMode();
+    }
+
+    public boolean isRestoringCraftingScreen() {
+        return currentState == State.WAITING_FOR_RETURN_OPEN && mc.player != null
+                && mc.gui.screen() instanceof CraftingScreen screen
+                && screen.getMenu() != mc.player.containerMenu
+                && mc.player.containerMenu instanceof net.minecraft.world.inventory.CraftingMenu;
     }
 
     private void performWithdrawal() {

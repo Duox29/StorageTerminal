@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.CraftingTableBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
@@ -19,6 +20,8 @@ public class ManualContainerTracker {
     private static int confirmedMenuId = -1;
 
     public static void setLastInteractedBlock(BlockPos pos) {
+        pendingManualUpdate = null;
+        manualUpdateTimer = 0;
         lastInteractedBlock = pos;
         isManualOpen = true;
         confirmedManualContainer = null;
@@ -40,7 +43,14 @@ public class ManualContainerTracker {
                                               int menuId, MenuType<?> menuType) {
         if (!isManualOpen) return;
         isManualOpen = false;
-        if (mc.level == null || !InventoryUtils.matchesStorageMenu(containerPos, menuType)) return;
+        if (mc.level == null) return;
+        if (menuType == MenuType.CRAFTING
+                && mc.level.getBlockState(containerPos).getBlock() instanceof CraftingTableBlock) {
+            confirmedManualContainer = containerPos.immutable();
+            confirmedMenuId = menuId;
+            return;
+        }
+        if (!InventoryUtils.matchesStorageMenu(containerPos, menuType)) return;
 
         BlockEntity be = mc.level.getBlockEntity(containerPos);
         if (!InventoryUtils.isStorable(be)) return;
