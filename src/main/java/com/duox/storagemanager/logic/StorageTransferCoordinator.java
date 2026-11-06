@@ -6,6 +6,7 @@ import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.utils.InventoryUtils;
 import com.duox.storagemanager.utils.ItemSerializer;
 import com.duox.storagemanager.utils.ManualContainerTracker;
+import com.duox.storagemanager.utils.MessageUtils;
 import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
@@ -41,6 +42,18 @@ public final class StorageTransferCoordinator {
         pending.addLast(new Transfer(itemId, quantity, inventorySlot, false, expectedStack.copy(), null, null, false));
     }
 
+    /** Requests up to one full stack into the first free inventory slot (Ctrl-click). */
+    public static void retrieveStack(String itemId, ItemStack expectedStack, int available) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || itemId == null || expectedStack == null || expectedStack.isEmpty()) return;
+        int slot = InventoryUtils.findEmptyInventorySlot();
+        if (slot < 0) {
+            MessageUtils.sendMessage("§6Storage Terminal: §cInventory is full.");
+            return;
+        }
+        retrieve(itemId, Math.min(expectedStack.getMaxStackSize(), available), slot, expectedStack);
+    }
+
     public static void retrieveRequests(Map<String, Integer> requests, RecipeDisplayId recipe, boolean placeAll) {
         pending.addLast(new Transfer(null, 0, -1, false, ItemStack.EMPTY, Map.copyOf(requests), recipe, placeAll));
     }
@@ -52,7 +65,7 @@ public final class StorageTransferCoordinator {
         ItemStack current = mc.player.getInventory().getItem(inventorySlot);
         if (!ItemStack.isSameItemSameComponents(current, expectedStack)
                 || current.getCount() != expectedStack.getCount()) {
-            ToastUtils.sendToast("§6Storage Terminal", "Drag cancelled: inventory slot changed.");
+            ToastUtils.sendToast("§6Storage Terminal", "Transfer cancelled: inventory slot changed.");
             return false;
         }
         if (sameStash(active, inventorySlot, expectedStack)

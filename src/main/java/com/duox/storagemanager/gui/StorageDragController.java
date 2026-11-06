@@ -45,22 +45,28 @@ public final class StorageDragController {
         pressY = y;
     }
 
+    /**
+     * Ctrl+click deposit. Queues the stack straight from its slot and reports
+     * whether vanilla must skip its own click, so the item never leaves the slot
+     * and rapid consecutive clicks are always accepted.
+     */
+    public boolean beginStashClick(MouseButtonEvent event, AbstractContainerScreen<?> screen,
+                                   StoragePanel panel, boolean virtual) {
+        if (!event.hasControlDown()) return false;
+        Slot slot = playerSlotPress(event, screen, panel, virtual, false);
+        if (slot == null) return false;
+        clear();
+        StorageTransferCoordinator.stash(slot.getContainerSlot(), slot.getItem().copy());
+        return true;
+    }
+
     /** Observe vanilla's mouse-down; a stale screen uses a virtual drag. */
     public void beginInventory(MouseButtonEvent event, AbstractContainerScreen<?> screen,
                                StoragePanel panel, boolean virtual) {
         clear();
-        if (event.button() != InputConstants.MOUSE_BUTTON_LEFT || mc.player == null
-                || event.hasShiftDown() || event.hasControlDown() || event.hasAltDown()
-                || (event.modifiers() & InputConstants.MOD_SUPER) != 0
-                || panel.isMouseOver(event.x(), event.y())
-                || screen.getChildAt(event.x(), event.y()).isPresent()
-                || (!virtual && screen.getMenu() != mc.player.containerMenu)
-                || (!virtual && !mc.player.containerMenu.getCarried().isEmpty())) return;
-
-        Slot slot = playerSlotAt(screen, event.x(), event.y());
-        if (slot == null || !slot.hasItem() || !slot.mayPickup(mc.player)) return;
-        ItemStack current = mc.player.getInventory().getItem(slot.getContainerSlot());
-        if (!sameStack(current, slot.getItem())) return;
+        if (event.hasControlDown()) return;
+        Slot slot = playerSlotPress(event, screen, panel, virtual, true);
+        if (slot == null) return;
 
         source = Source.INVENTORY;
         StorageTransferCoordinator.setGestureHeld(true);
@@ -68,9 +74,31 @@ public final class StorageDragController {
         virtualInventoryDrag = virtual;
         inventorySlot = slot.getContainerSlot();
         menuSlot = slot.index;
-        inventoryStack = current.copy();
+        inventoryStack = slot.getItem().copy();
         pressX = event.x();
         pressY = event.y();
+    }
+
+    /**
+     * Shared press test for a left-click on a player inventory slot outside the
+     * panel. Returns the slot, or null when vanilla modifiers or the cursor own it.
+     */
+    private Slot playerSlotPress(MouseButtonEvent event, AbstractContainerScreen<?> screen,
+                                 StoragePanel panel, boolean virtual, boolean rejectBusyCursor) {
+        if (event.button() != InputConstants.MOUSE_BUTTON_LEFT || mc.player == null
+                || event.hasShiftDown() || event.hasAltDown()
+                || (event.modifiers() & InputConstants.MOD_SUPER) != 0
+                || panel.isMouseOver(event.x(), event.y())
+                || screen.getChildAt(event.x(), event.y()).isPresent()
+                || (!virtual && screen.getMenu() != mc.player.containerMenu)
+                || (rejectBusyCursor && !virtual && !mc.player.containerMenu.getCarried().isEmpty())) {
+            return null;
+        }
+
+        Slot slot = playerSlotAt(screen, event.x(), event.y());
+        if (slot == null || !slot.hasItem() || !slot.mayPickup(mc.player)) return null;
+        ItemStack current = mc.player.getInventory().getItem(slot.getContainerSlot());
+        return sameStack(current, slot.getItem()) ? slot : null;
     }
 
     /** Vanilla or an overlay may consume the press; only track a real pickup. */
@@ -85,6 +113,12 @@ public final class StorageDragController {
         if (event.button() != InputConstants.MOUSE_BUTTON_LEFT) return false;
         updateDragPosition(event.x(), event.y());
         return source == Source.PANEL || virtualInventoryDrag || panel.isMouseOver(event.x(), event.y());
+    }
+
+    private void updateDragPosition(double x, double y) {
+        double dx = x - pressX;
+        double dy = y - pressY;
+        dragging |= dx * dx + dy * dy >= DRAG_THRESHOLD_SQUARED;
     }
 
     /** Returns true when vanilla must not process this release. */
@@ -130,12 +164,6 @@ public final class StorageDragController {
         }
         clear();
         return true;
-    }
-
-    private void updateDragPosition(double x, double y) {
-        double dx = x - pressX;
-        double dy = y - pressY;
-        dragging |= dx * dx + dy * dy >= DRAG_THRESHOLD_SQUARED;
     }
 
     private boolean sourcePickupIntact(AbstractContainerScreen<?> screen) {

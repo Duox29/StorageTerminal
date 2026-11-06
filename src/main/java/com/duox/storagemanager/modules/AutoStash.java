@@ -203,10 +203,10 @@ public class AutoStash extends Module {
         // A real inventory drag can start while the visible menu is still
         // current. Do not open or close a silent menu with that stack in hand.
         if (targetedInventorySlot != null && !mc.player.containerMenu.getCarried().isEmpty()) return;
-        // A drag authorizes only the original stack. A player or another mod may
-        // change that slot while we wait for a silent chest to open or sync.
+        // A targeted stash authorizes only the original stack. A player or another
+        // mod may change that slot while we wait for a silent chest to open or sync.
         if (targetedInventorySlot != null && !targetedStackMatchesExpected()) {
-            sendMessage("Dragged stack changed; stash cancelled to protect inventory.");
+            sendMessage("Selected stack changed; stash cancelled to protect inventory.");
             setEnabled(false);
             return;
         }
@@ -298,7 +298,7 @@ public class AutoStash extends Module {
         stashQueue = planStash(isDumpMode);
 
         if (stashQueue.isEmpty()) {
-            sendMessage(targetedInventorySlot != null ? "No suitable chest found for dragged item."
+            sendMessage(targetedInventorySlot != null ? "No suitable chest found for selected item."
                     : isDumpMode ? "No suitable chests found for dumping." : "Nothing to stash.");
             this.setEnabled(false);
             return;
@@ -336,11 +336,11 @@ public class AutoStash extends Module {
         int initial = targetedExpectedStack.getCount();
         int moved = Math.max(0, initial - remaining);
         if (moved == 0) {
-            sendMessage("Could not stash dragged item; available chests may be full.");
+            sendMessage("Could not stash selected item; available chests may be full.");
         } else if (remaining > 0) {
-            sendMessage("Stashed " + moved + "/" + initial + " dragged items (partial).");
+            sendMessage("Stashed " + moved + "/" + initial + " selected items (partial).");
         } else {
-            sendMessage("Stashed " + moved + " dragged items.");
+            sendMessage("Stashed " + moved + " items.");
         }
     }
 
@@ -367,7 +367,7 @@ public class AutoStash extends Module {
                 if (targetedInventorySlot != null && (invSlotIndex != targetedInventorySlot
                         || before != targetedExpectedRemainingCount
                         || !ItemStack.isSameItemSameComponents(menu.getSlot(menuSlotId).getItem(), targetedExpectedStack))) {
-                    sendMessage("Dragged stack changed; stash cancelled to protect inventory.");
+                    sendMessage("Selected stack changed; stash cancelled to protect inventory.");
                     setEnabled(false);
                     return State.IDLE;
                 }

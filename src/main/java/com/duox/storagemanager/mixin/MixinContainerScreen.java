@@ -110,6 +110,11 @@ public abstract class MixinContainerScreen extends Screen {
                 storagePanel.mouseClicked(event, doubleClick);
                 this.setFocused(storagePanel);
             } else if (!doubleClick && storageDragController != null) {
+                if (storageDragController.beginStashClick(event,
+                        (AbstractContainerScreen<?>) (Object) this, storagePanel, true)) {
+                    cir.setReturnValue(true);
+                    return;
+                }
                 storageDragController.beginInventory(event,
                         (AbstractContainerScreen<?>) (Object) this, storagePanel, true);
             }
@@ -126,6 +131,11 @@ public abstract class MixinContainerScreen extends Screen {
             return;
         }
         if (!doubleClick && storagePanel != null && storageDragController != null) {
+            if (storageDragController.beginStashClick(event,
+                    (AbstractContainerScreen<?>) (Object) this, storagePanel, false)) {
+                cir.setReturnValue(true);
+                return;
+            }
             storageDragController.beginInventory(event,
                     (AbstractContainerScreen<?>) (Object) this, storagePanel, false);
         }

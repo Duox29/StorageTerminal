@@ -223,11 +223,24 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (hotbarButton.mouseClicked(event, false)) return true;
         if (dumpButton.mouseClicked(event, false)) return true;
 
+        if (button == InputConstants.MOUSE_BUTTON_LEFT && event.hasControlDown() && requestStackAt(event)) {
+            return true;
+        }
+
         if (beginPanelDragAt(event)) {
             return true;
         }
 
         itemGrid.mouseClicked(mouseX, mouseY, button, layout());
+        return true;
+    }
+
+    /** Ctrl-click requests one stack (or as much as is stored) into a free inventory slot. */
+    private boolean requestStackAt(MouseButtonEvent event) {
+        ItemGridView.ItemSelection selected = itemGrid.itemAt(event.x(), event.y(), layout());
+        if (selected == null) return false;
+        StorageTransferCoordinator.retrieveStack(selected.id(), selected.stack(), selected.totalCount());
+        StorageUi.playClick();
         return true;
     }
 

@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
@@ -110,6 +111,17 @@ public class InventoryUtils {
                     && inventorySlot >= 0 && inventorySlot < PLAYER_INVENTORY_SIZE
                     && !slot.hasItem() && mc.player.getInventory().getItem(inventorySlot).isEmpty()
                     && slot.mayPlace(stack)) return slot.index;
+        }
+        return -1;
+    }
+
+    /** First empty inventory index, searching the main inventory before the hotbar. */
+    public static int findEmptyInventorySlot() {
+        if (mc.player == null) return -1;
+        Inventory inventory = mc.player.getInventory();
+        for (int offset = 0; offset < PLAYER_INVENTORY_SIZE; offset++) {
+            int i = (offset + 9) % PLAYER_INVENTORY_SIZE;
+            if (inventory.getItem(i).isEmpty()) return i;
         }
         return -1;
     }

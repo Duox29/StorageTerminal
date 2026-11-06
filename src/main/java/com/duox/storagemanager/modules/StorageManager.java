@@ -255,14 +255,7 @@ public class StorageManager extends Module {
         // A queued drag may start after another transfer fills its chosen slot.
         // Resolve a new empty slot once, before planning the normal request.
         if (!mc.player.getInventory().getItem(inventorySlot).isEmpty()) {
-            inventorySlot = -1;
-            for (int offset = 0; offset < InventoryUtils.PLAYER_INVENTORY_SIZE; offset++) {
-                int i = (offset + 9) % InventoryUtils.PLAYER_INVENTORY_SIZE;
-                if (mc.player.getInventory().getItem(i).isEmpty()) {
-                    inventorySlot = i;
-                    break;
-                }
-            }
+            inventorySlot = InventoryUtils.findEmptyInventorySlot();
             if (inventorySlot < 0) return false;
         }
 

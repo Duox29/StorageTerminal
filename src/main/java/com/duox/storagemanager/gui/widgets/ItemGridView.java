@@ -159,6 +159,7 @@ public class ItemGridView {
                     tooltip.add(Component.literal("§eRequesting: " + queued));
                 }
                 tooltip.add(Component.literal("§8[L-Click: +64 | R-Click: +1 | Shift: Remove]"));
+                tooltip.add(Component.literal("§8[Ctrl-Click: request 1 stack]"));
                 tooltip.add(Component.literal("§8[Drag to inventory: retrieve]"));
                 graphics.setTooltipForNextFrame(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
             }
