@@ -2,6 +2,7 @@ package com.duox.storagemanager.mixin;
 
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
+import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.gui.screens.Screen;
@@ -19,6 +20,11 @@ public class MixinGui {
     @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void onSetScreen(Screen screen, CallbackInfo ci) {
         if (!(screen instanceof AbstractContainerScreen<?>)) {
+            return;
+        }
+
+        if (StorageTransferCoordinator.deferRestoredScreen(screen)) {
+            ci.cancel();
             return;
         }
 

@@ -8,6 +8,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.inventory.MenuType;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.ChestBlock;
@@ -101,11 +102,14 @@ public class InventoryUtils {
         );
     }
 
-    public static int findEmptyPlayerSlot(AbstractContainerMenu menu, int containerSlotsEnd) {
-        for (int i = containerSlotsEnd; i < menu.slots.size(); i++) {
-            if (menu.getSlot(i).getItem().isEmpty()) {
-                return i;
-            }
+    public static int findEmptyPlayerSlot(AbstractContainerMenu menu, ItemStack stack) {
+        if (mc.player == null) return -1;
+        for (Slot slot : menu.slots) {
+            int inventorySlot = slot.getContainerSlot();
+            if (slot.container == mc.player.getInventory() && slot.isActive()
+                    && inventorySlot >= 0 && inventorySlot < PLAYER_INVENTORY_SIZE
+                    && !slot.hasItem() && mc.player.getInventory().getItem(inventorySlot).isEmpty()
+                    && slot.mayPlace(stack)) return slot.index;
         }
         return -1;
     }
@@ -114,6 +118,15 @@ public class InventoryUtils {
     public static int mapInventorySlotToMenuSlot(int inventorySlot, int containerSlots) {
         if (inventorySlot < 0 || inventorySlot >= PLAYER_INVENTORY_SIZE) return -1;
         return inventorySlot < 9 ? containerSlots + 27 + inventorySlot : containerSlots + inventorySlot - 9;
+    }
+
+    /** How many items of the given stack a slot can still accept. */
+    public static int getSlotSpace(Slot slot, ItemStack stack) {
+        if (!slot.mayPlace(stack)) return 0;
+        ItemStack current = slot.getItem();
+        if (current.isEmpty()) return Math.min(stack.getMaxStackSize(), slot.getMaxStackSize(stack));
+        if (!ItemStack.isSameItemSameComponents(current, stack)) return 0;
+        return Math.max(0, Math.min(current.getMaxStackSize(), slot.getMaxStackSize(current)) - current.getCount());
     }
 
     public static void closeContainerSilent() {

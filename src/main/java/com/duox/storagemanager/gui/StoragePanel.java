@@ -7,6 +7,7 @@ import com.duox.storagemanager.gui.widgets.StorageTheme;
 import com.duox.storagemanager.gui.widgets.StorageUi;
 import com.duox.storagemanager.gui.widgets.VanillaStorageGui;
 import com.duox.storagemanager.modules.AutoStash;
+import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import com.mojang.blaze3d.platform.InputConstants;
@@ -138,12 +139,17 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     /** Selects a stored item while a silent menu makes the visible screen stale. */
-    public boolean beginPanelDragAt(double mouseX, double mouseY) {
+    public boolean beginPanelDragAt(MouseButtonEvent event) {
         if (dragController == null || mc.player == null
-                || !mc.player.containerMenu.getCarried().isEmpty()) return false;
-        ItemGridView.ItemSelection selected = itemGrid.itemAt(mouseX, mouseY, layout());
+                || event.button() != InputConstants.MOUSE_BUTTON_LEFT
+                || event.hasShiftDown() || event.hasControlDown() || event.hasAltDown()
+                || (event.modifiers() & InputConstants.MOD_SUPER) != 0
+                || (mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen
+                    && screen.getMenu() == mc.player.containerMenu
+                    && !mc.player.containerMenu.getCarried().isEmpty())) return false;
+        ItemGridView.ItemSelection selected = itemGrid.itemAt(event.x(), event.y(), layout());
         if (selected == null) return false;
-        dragController.beginPanel(itemGrid, selected, mouseX, mouseY);
+        dragController.beginPanel(itemGrid, selected, event.x(), event.y());
         return true;
     }
 
@@ -160,6 +166,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                     StorageTheme.HEADER_HOVER);
         }
         graphics.text(mc.font, "Storage Terminal", x + 8, y + 8, StorageTheme.TEXT_TITLE, false);
+        int queued = StorageTransferCoordinator.queuedCount();
+        if (queued > 0) graphics.text(mc.font, "Queued: " + queued,
+                x + metrics.width() - 70, y + 8, StorageTheme.TEXT_TITLE, false);
         searchBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
 
         requestButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
@@ -182,8 +191,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
         // A cursor stack belongs to vanilla. Do not trigger panel actions until
         // it has been placed back into a real slot.
-        if (mc.player != null && !mc.player.containerMenu.getCarried().isEmpty()) {
-            if (dragController != null) dragController.blockCarriedPanelClick(button);
+        if (mc.player != null && mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen
+                && screen.getMenu() == mc.player.containerMenu && !mc.player.containerMenu.getCarried().isEmpty()) {
+            if (dragController != null) dragController.clear();
             return true;
         }
 
@@ -206,10 +216,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (recipeButton.mouseClicked(event, false)) return true;
         if (hotbarButton.mouseClicked(event, false)) return true;
 
-        if (button == InputConstants.MOUSE_BUTTON_LEFT && dragController != null
-                && !event.hasShiftDown() && !event.hasControlDown() && !event.hasAltDown()
-                && (event.modifiers() & InputConstants.MOD_SUPER) == 0
-                && beginPanelDragAt(mouseX, mouseY)) {
+        if (beginPanelDragAt(event)) {
             return true;
         }
 

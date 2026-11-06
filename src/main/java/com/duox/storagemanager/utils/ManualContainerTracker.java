@@ -1,7 +1,6 @@
 package com.duox.storagemanager.utils;
 
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.inventory.MenuType;
@@ -17,14 +16,12 @@ public class ManualContainerTracker {
     private static BlockPos pendingManualUpdate = null;
     private static int manualUpdateTimer = 0;
     private static BlockPos confirmedManualContainer = null;
-    private static ClientLevel confirmedLevel = null;
     private static int confirmedMenuId = -1;
 
     public static void setLastInteractedBlock(BlockPos pos) {
         lastInteractedBlock = pos;
         isManualOpen = true;
         confirmedManualContainer = null;
-        confirmedLevel = null;
         confirmedMenuId = -1;
     }
 
@@ -61,14 +58,12 @@ public class ManualContainerTracker {
         pendingManualUpdate = actualPos;
         manualUpdateTimer = 5; // Wait for the menu to sync.
         confirmedManualContainer = actualPos.immutable();
-        confirmedLevel = mc.level;
         confirmedMenuId = menuId;
     }
 
     /** Reopen only the chest belonging to the currently displayed manual menu. */
-    public static BlockPos getConfirmedManualContainer(int menuId, ClientLevel level) {
-        return level != null && level == confirmedLevel && menuId == confirmedMenuId
-                ? confirmedManualContainer : null;
+    public static BlockPos getConfirmedManualContainer(int menuId) {
+        return menuId == confirmedMenuId ? confirmedManualContainer : null;
     }
 
     public static void tickManualCacheUpdate() {
@@ -83,8 +78,7 @@ public class ManualContainerTracker {
 
         // Verify the container is still open.
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player != null && mc.level == confirmedLevel
-                && mc.player.containerMenu != null
+        if (mc.player != null && mc.player.containerMenu != null
                 && mc.player.containerMenu.containerId == confirmedMenuId
                 && mc.player.containerMenu != mc.player.inventoryMenu) {
             ChestCache.updateFromContainerMenu(pos, mc.player.containerMenu, mc);
@@ -97,7 +91,6 @@ public class ManualContainerTracker {
         pendingManualUpdate = null;
         manualUpdateTimer = 0;
         confirmedManualContainer = null;
-        confirmedLevel = null;
         confirmedMenuId = -1;
     }
 }

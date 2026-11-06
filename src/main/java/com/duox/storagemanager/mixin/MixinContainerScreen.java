@@ -105,13 +105,9 @@ public abstract class MixinContainerScreen extends Screen {
             CallbackInfoReturnable<Boolean> cir) {
         if (hasStaleMenu()) {
             if (!doubleClick && event.button() == InputConstants.MOUSE_BUTTON_LEFT
-                    && storagePanel != null && storageDragController != null
-                    && StorageTransferCoordinator.hasPendingTransfers()) {
+                    && storagePanel != null && storageDragController != null) {
                 if (storagePanel.isMouseOver(event.x(), event.y())) {
-                    if (!event.hasShiftDown() && !event.hasControlDown() && !event.hasAltDown()
-                            && (event.modifiers() & InputConstants.MOD_SUPER) == 0) {
-                        storagePanel.beginPanelDragAt(event.x(), event.y());
-                    }
+                    storagePanel.mouseClicked(event, doubleClick);
                 } else {
                     storageDragController.beginInventory(event,
                             (AbstractContainerScreen<?>) (Object) this, storagePanel, true);
@@ -167,6 +163,7 @@ public abstract class MixinContainerScreen extends Screen {
             if (storagePanel != null && storageDragController != null) {
                 storageDragController.mouseDragged(event, storagePanel,
                         (AbstractContainerScreen<?>) (Object) this);
+                if (storagePanel.isHandlingDrag()) storagePanel.mouseDragged(event, dragX, dragY);
             }
             cir.setReturnValue(true);
             return;
@@ -190,6 +187,7 @@ public abstract class MixinContainerScreen extends Screen {
             if (storagePanel != null && storageDragController != null) {
                 storageDragController.mouseReleased(event,
                         (AbstractContainerScreen<?>) (Object) this, storagePanel);
+                storagePanel.mouseReleased(event);
             }
             resetVanillaDragState();
             cir.setReturnValue(true);
