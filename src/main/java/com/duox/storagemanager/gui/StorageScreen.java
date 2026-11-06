@@ -64,19 +64,14 @@ public class StorageScreen extends Screen {
         int btnY = guiTop + metrics.height() - 28;
         int bottomPadding = 7;
         int bottomBtnSpacing = 2;
-        int bottomBtnWidth = (metrics.width() - (bottomPadding * 2) - (bottomBtnSpacing * 2)) / 3;
+        int bottomBtnWidth = (metrics.width() - (bottomPadding * 2) - bottomBtnSpacing) / 2;
 
         ModernButton autoStashButton = StorageUi.autoStashButton(
                 guiLeft + bottomPadding, btnY, bottomBtnWidth, 20);
         this.addRenderableWidget(autoStashButton);
 
-        ModernButton hotbarButton = StorageUi.hotbarButton(
-                guiLeft + bottomPadding + bottomBtnWidth + bottomBtnSpacing,
-                btnY, bottomBtnWidth, 20);
-        this.addRenderableWidget(hotbarButton);
-
         ModernButton requestButton = StorageUi.requestButton(
-                guiLeft + bottomPadding + (bottomBtnWidth + bottomBtnSpacing) * 2, btnY, bottomBtnWidth, 20,
+                guiLeft + bottomPadding + bottomBtnWidth + bottomBtnSpacing, btnY, bottomBtnWidth, 20,
                 () -> {
                     if (!storageManager.isEnabled()) {
                         storageManager.setEnabled(true);
@@ -122,16 +117,12 @@ public class StorageScreen extends Screen {
         this.addRenderableWidget(buildCacheButton);
 
         int dumpBtnX = buildBtnX - sideBtnWidth - buttonSpacing;
-        ModernButton dumpAllButton = new ModernButton(dumpBtnX, topButtonsY, sideBtnWidth, 20,
-                Component.literal("Dump"), b -> {
-                    AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-                    if (stash != null) {
-                        stash.startDumpAll();
-                        ToastUtils.sendToast("§6Storage", "Dumping inventory...");
-                    }
-                    StorageUi.playClick();
-                });
+        ModernButton dumpAllButton = StorageUi.dumpButton(dumpBtnX, topButtonsY, sideBtnWidth, 20);
         this.addRenderableWidget(dumpAllButton);
+
+        ModernButton hotbarButton = StorageUi.hotbarButton(
+                dumpBtnX - sideBtnWidth - buttonSpacing, topButtonsY, sideBtnWidth, 20);
+        this.addRenderableWidget(hotbarButton);
 
         int btnWidth = 55;
         int btnHeight = 24;
