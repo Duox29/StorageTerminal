@@ -9,6 +9,7 @@ import com.duox.storagemanager.gui.widgets.VanillaStorageGui;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.modules.StorageManager;
+import com.duox.storagemanager.system.ConfigManager;
 import com.duox.storagemanager.system.ModuleManager;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
@@ -258,6 +259,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             widgetFocused = false;
             storageManager.panelX.setValue((double) x);
             storageManager.panelY.setValue((double) y);
+            ConfigManager.getInstance().save();
             return true;
         }
 

@@ -39,6 +39,9 @@ public class ConfigManager {
     private static final long SAVE_DELAY_MS = 2000;
 
     private ConfigManager() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (isDirty.compareAndSet(true, false)) performSave();
+        }, "ConfigSaver-Flush"));
     }
 
     public static ConfigManager getInstance() {
