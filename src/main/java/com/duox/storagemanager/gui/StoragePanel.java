@@ -10,6 +10,7 @@ import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ConfigManager;
+import com.duox.storagemanager.system.ItemFilterCategory;
 import com.duox.storagemanager.system.ModuleManager;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
@@ -24,14 +25,21 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class StoragePanel implements Renderable, GuiEventListener, NarratableEntry {
 
     private static final int HEADER_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 20;
-    private static final int TOP_BTN_WIDTH = 48;
-    private static final int TOP_BTN_SPACING = 2;
+    private static final int TOP_BTN_WIDTH = 37;
+    private static final int TOP_BTN_SPACING = 1;
+    private static final int TOP_ROW_SPACING = 2;
     private static final int BOTTOM_PADDING = 10;
     private static final int BOTTOM_BTN_SPACING = 4;
+    private static final int CATEGORY_WIDTH = 44;
+    private static final int CATEGORY_SPACING = 2;
+    private static final int CATEGORY_GAP = 4;
 
     public int x;
     public int y;
@@ -48,7 +56,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private ModernButton autoStashButton;
     private ModernButton recipeButton;
     private ModernButton hotbarButton;
+    private ModernButton clearCacheButton;
+    private ModernButton buildCacheButton;
     private ModernButton dumpButton;
+    private final List<ModernButton> topButtons = new ArrayList<>();
+    private final List<ModernButton> categoryButtons = new ArrayList<>();
 
     private boolean isDragging = false;
     private int dragOffsetX = 0;
@@ -82,7 +94,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         this.searchBox = StorageUi.searchBox(0, 0, searchW, 18, itemGrid::setQuery);
 
         this.hotbarButton = StorageUi.hotbarButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT);
-
+        this.clearCacheButton = StorageUi.clearCacheButton(
+                0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT, itemGrid::refreshFromCache);
+        this.buildCacheButton = StorageUi.buildCacheButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT);
         this.dumpButton = StorageUi.dumpButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT);
 
         this.recipeButton = new ModernButton(0, 0, TOP_BTN_WIDTH, BUTTON_HEIGHT,
@@ -91,26 +105,38 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                     StorageUi.playClick();
                 }).setActiveSupplier(() -> storageManager.autoRequestRecipe.getValue());
 
+        topButtons.clear();
+        topButtons.add(clearCacheButton);
+        topButtons.add(buildCacheButton);
+        topButtons.add(hotbarButton);
+        topButtons.add(dumpButton);
+        topButtons.add(recipeButton);
+
         int bottomBtnWidth = (metrics.width() - (BOTTOM_PADDING * 2) - BOTTOM_BTN_SPACING) / 2;
         this.requestButton = StorageUi.requestButton(0, 0, bottomBtnWidth, BUTTON_HEIGHT,
                 storageManager::startRetrieval);
         this.autoStashButton = StorageUi.autoStashButton(0, 0, bottomBtnWidth, BUTTON_HEIGHT);
 
+        initCategoryButtons();
         layoutWidgets();
         itemGrid.refreshFromCache();
+    }
+
+    private void initCategoryButtons() {
+        categoryButtons.clear();
+        for (ItemFilterCategory category : ItemFilterCategory.values()) {
+            categoryButtons.add(StorageUi.categoryButton(
+                    0, 0, CATEGORY_WIDTH, BUTTON_HEIGHT, category,
+                    () -> itemGrid.setCategory(category),
+                    () -> itemGrid.getCategory() == category));
+        }
     }
 
     private void layoutWidgets() {
         searchBox.setX(x + BOTTOM_PADDING);
         searchBox.setY(y + 25);
 
-        int topBtnY = y - 22;
-        recipeButton.setX(x + metrics.width() - TOP_BTN_WIDTH);
-        recipeButton.setY(topBtnY);
-        dumpButton.setX(x + metrics.width() - TOP_BTN_WIDTH * 2 - TOP_BTN_SPACING);
-        dumpButton.setY(topBtnY);
-        hotbarButton.setX(x + metrics.width() - TOP_BTN_WIDTH * 3 - TOP_BTN_SPACING * 2);
-        hotbarButton.setY(topBtnY);
+        layoutTopButtons();
 
         int bottomBtnY = y + metrics.height() - 25;
         int bottomBtnWidth = (metrics.width() - (BOTTOM_PADDING * 2) - BOTTOM_BTN_SPACING) / 2;
@@ -118,6 +144,61 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         requestButton.setY(bottomBtnY);
         autoStashButton.setX(x + BOTTOM_PADDING + bottomBtnWidth + BOTTOM_BTN_SPACING);
         autoStashButton.setY(bottomBtnY);
+
+        layoutCategoryButtons();
+    }
+
+    private int topButtonsPerRow() {
+        int step = TOP_BTN_WIDTH + TOP_BTN_SPACING;
+        return Math.max(1, (metrics.width() + TOP_BTN_SPACING) / step);
+    }
+
+    private int topRowCount() {
+        int perRow = topButtonsPerRow();
+        return (topButtons.size() + perRow - 1) / perRow;
+    }
+
+    private int topRowsHeight() {
+        return topRowCount() * (BUTTON_HEIGHT + TOP_ROW_SPACING);
+    }
+
+    /** Wraps the top controls across as many rows as the panel width allows. */
+    private void layoutTopButtons() {
+        int perRow = topButtonsPerRow();
+        int rows = topRowCount();
+        int step = TOP_BTN_WIDTH + TOP_BTN_SPACING;
+        int firstRowY = y - 2 - rows * BUTTON_HEIGHT - (rows - 1) * TOP_ROW_SPACING;
+
+        for (int i = 0; i < topButtons.size(); i++) {
+            int row = i / perRow;
+            int offsetInRow = i % perRow;
+            topButtons.get(i).setX(x + offsetInRow * step);
+            topButtons.get(i).setY(firstRowY + row * (BUTTON_HEIGHT + TOP_ROW_SPACING));
+        }
+    }
+
+    private void layoutCategoryButtons() {
+        int columnX = prefersLeftSide()
+                ? x - CATEGORY_WIDTH - CATEGORY_GAP
+                : x + metrics.width() + CATEGORY_GAP;
+
+        for (int i = 0; i < categoryButtons.size(); i++) {
+            ModernButton button = categoryButtons.get(i);
+            button.setX(columnX);
+            button.setY(y + i * (BUTTON_HEIGHT + CATEGORY_SPACING));
+        }
+    }
+
+    private boolean prefersLeftSide() {
+        return x + metrics.width() / 2 < mc.getWindow().getGuiScaledWidth() / 2;
+    }
+
+    private boolean isOverCategoryStrip(double mouseX, double mouseY) {
+        if (categoryButtons.isEmpty()) return false;
+        ModernButton first = categoryButtons.getFirst();
+        ModernButton last = categoryButtons.getLast();
+        return mouseX >= first.getX() && mouseX <= first.getX() + CATEGORY_WIDTH
+                && mouseY >= first.getY() && mouseY <= last.getY() + BUTTON_HEIGHT;
     }
 
     private ItemGridView.Layout layout() {
@@ -159,6 +240,9 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         itemGrid.refreshIfDirty();
+        // Rows and the strip side depend on the panel position and width.
+        layoutTopButtons();
+        layoutCategoryButtons();
 
         VanillaStorageGui.panel(graphics, x, y, metrics.width(), metrics.height());
 
@@ -178,7 +262,12 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         autoStashButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
         recipeButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
         hotbarButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        clearCacheButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        buildCacheButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
         dumpButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        for (ModernButton categoryButton : categoryButtons) {
+            categoryButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        }
 
         itemGrid.render(graphics, layout(), mouseX, mouseY);
     }
@@ -201,6 +290,10 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
+        for (ModernButton categoryButton : categoryButtons) {
+            if (categoryButton.mouseClicked(event, false)) return true;
+        }
+
         if (button == InputConstants.MOUSE_BUTTON_LEFT && mouseX >= x && mouseX <= x + metrics.width()
                 && mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
             isDragging = true;
@@ -219,6 +312,8 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (autoStashButton.mouseClicked(event, false)) return true;
         if (recipeButton.mouseClicked(event, false)) return true;
         if (hotbarButton.mouseClicked(event, false)) return true;
+        if (clearCacheButton.mouseClicked(event, false)) return true;
+        if (buildCacheButton.mouseClicked(event, false)) return true;
         if (dumpButton.mouseClicked(event, false)) return true;
 
         if (button == InputConstants.MOUSE_BUTTON_LEFT && event.hasControlDown() && requestStackAt(event)) {
@@ -265,7 +360,18 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 || autoStashButton.mouseReleased(event)
                 || recipeButton.mouseReleased(event)
                 || hotbarButton.mouseReleased(event)
-                || dumpButton.mouseReleased(event);
+                || clearCacheButton.mouseReleased(event)
+                || buildCacheButton.mouseReleased(event)
+                || dumpButton.mouseReleased(event)
+                || releaseCategoryButtons(event);
+    }
+
+    private boolean releaseCategoryButtons(MouseButtonEvent event) {
+        boolean released = false;
+        for (ModernButton categoryButton : categoryButtons) {
+            released |= categoryButton.mouseReleased(event);
+        }
+        return released;
     }
 
     @Override
@@ -316,9 +422,10 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     @Override
     public boolean isMouseOver(double mouseX, double mouseY) {
-        // Include the floating top buttons above the panel.
-        return mouseX >= x && mouseX <= x + metrics.width()
-                && mouseY >= y - 25 && mouseY <= y + metrics.height();
+        // Include the wrapped top buttons and the category strip beside the panel.
+        boolean overPanel = mouseX >= x && mouseX <= x + metrics.width()
+                && mouseY >= y - 2 - topRowsHeight() && mouseY <= y + metrics.height();
+        return overPanel || isOverCategoryStrip(mouseX, mouseY);
     }
 
     @Override
