@@ -35,6 +35,8 @@ public class ItemGridView {
 
     private static final int MIN_THUMB_HEIGHT = 24;
 
+    public record ItemSelection(String id, ItemStack stack, int totalCount) {}
+
     private final Minecraft mc = Minecraft.getInstance();
     private final StorageManager storageManager;
 
@@ -157,6 +159,7 @@ public class ItemGridView {
                     tooltip.add(Component.literal("§eRequesting: " + queued));
                 }
                 tooltip.add(Component.literal("§8[L-Click: +64 | R-Click: +1 | Shift: Remove]"));
+                tooltip.add(Component.literal("§8[Drag to inventory: retrieve]"));
                 graphics.setTooltipForNextFrame(mc.font, tooltip, entry.stack.getTooltipImage(), mouseX, mouseY);
             }
         }
@@ -217,8 +220,18 @@ public class ItemGridView {
             return false;
         }
 
-        applyClick(filteredItems.get(index), button);
+        applyClick(selectionOf(filteredItems.get(index)), button, mc.hasShiftDown());
         return true;
+    }
+
+    public ItemSelection itemAt(double mouseX, double mouseY, Layout layout) {
+        refreshIfDirty();
+        int index = indexAt(mouseX, mouseY, layout);
+        return index >= 0 && index < filteredItems.size() ? selectionOf(filteredItems.get(index)) : null;
+    }
+
+    private ItemSelection selectionOf(ItemEntry entry) {
+        return new ItemSelection(entry.id, entry.stack.copy(), entry.totalCount);
     }
 
     public boolean mouseDragged(double mouseY, int button, Layout layout) {
@@ -251,7 +264,7 @@ public class ItemGridView {
         return draggingScrollbar;
     }
 
-    private void applyClick(ItemEntry entry, int button) {
+    public void applyClick(ItemSelection entry, int button, boolean shiftDown) {
         int change = switch (button) {
             case InputConstants.MOUSE_BUTTON_LEFT -> 64;
             case InputConstants.MOUSE_BUTTON_RIGHT -> 1;
@@ -260,11 +273,11 @@ public class ItemGridView {
         if (change == 0) {
             return;
         }
-        if (mc.hasShiftDown()) {
+        if (shiftDown) {
             change = -change;
         }
 
-        storageManager.adjustQueued(entry.id, change, entry.totalCount);
+        storageManager.adjustQueued(entry.id(), change, entry.totalCount());
         StorageUi.playClick();
     }
 

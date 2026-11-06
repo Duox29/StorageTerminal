@@ -39,6 +39,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     private final StorageManager storageManager;
     private final Minecraft mc = Minecraft.getInstance();
     private final ItemGridView itemGrid;
+    private StorageDragController dragController;
     private EditBox searchBox;
 
     private ModernButton requestButton;
@@ -119,6 +120,33 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         return metrics.layoutAt(x, y, 13, 6);
     }
 
+    public void setDragController(StorageDragController controller) {
+        this.dragController = controller;
+    }
+
+    public boolean isStorageDropTarget(double mouseX, double mouseY) {
+        return mouseX >= x && mouseX < x + metrics.width()
+                && mouseY >= y && mouseY < y + metrics.height();
+    }
+
+    public int getPanelWidth() {
+        return metrics.width();
+    }
+
+    public int getPanelHeight() {
+        return metrics.height();
+    }
+
+    /** Selects a stored item while a silent menu makes the visible screen stale. */
+    public boolean beginPanelDragAt(double mouseX, double mouseY) {
+        if (dragController == null || mc.player == null
+                || !mc.player.containerMenu.getCarried().isEmpty()) return false;
+        ItemGridView.ItemSelection selected = itemGrid.itemAt(mouseX, mouseY, layout());
+        if (selected == null) return false;
+        dragController.beginPanel(itemGrid, selected, mouseX, mouseY);
+        return true;
+    }
+
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         itemGrid.refreshIfDirty();
@@ -152,6 +180,13 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return false;
         }
 
+        // A cursor stack belongs to vanilla. Do not trigger panel actions until
+        // it has been placed back into a real slot.
+        if (mc.player != null && !mc.player.containerMenu.getCarried().isEmpty()) {
+            if (dragController != null) dragController.blockCarriedPanelClick(button);
+            return true;
+        }
+
         if (button == InputConstants.MOUSE_BUTTON_LEFT && mouseX >= x && mouseX <= x + metrics.width()
                 && mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
             isDragging = true;
@@ -170,6 +205,13 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (autoStashButton.mouseClicked(event, false)) return true;
         if (recipeButton.mouseClicked(event, false)) return true;
         if (hotbarButton.mouseClicked(event, false)) return true;
+
+        if (button == InputConstants.MOUSE_BUTTON_LEFT && dragController != null
+                && !event.hasShiftDown() && !event.hasControlDown() && !event.hasAltDown()
+                && (event.modifiers() & InputConstants.MOD_SUPER) == 0
+                && beginPanelDragAt(mouseX, mouseY)) {
+            return true;
+        }
 
         itemGrid.mouseClicked(mouseX, mouseY, button, layout());
         return true;

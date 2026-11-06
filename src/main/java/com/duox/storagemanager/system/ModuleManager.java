@@ -1,6 +1,7 @@
 package com.duox.storagemanager.system;
 
 import com.duox.storagemanager.gui.StorageScreen;
+import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.modules.*;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.ManualContainerTracker;
@@ -54,6 +55,7 @@ public class ModuleManager {
             boolean worldChanged = ChestCache.ensureLoaded(mc);
             if (worldChanged) {
                 ManualContainerTracker.reset();
+                StorageTransferCoordinator.clear();
                 moduleMap.values().forEach(Module::onWorldChanged);
             }
             ManualContainerTracker.tickManualCacheUpdate();
@@ -98,6 +100,9 @@ public class ModuleManager {
             moduleMap.values().stream()
                     .filter(Module::isEnabled)
                     .forEach(Module::onTick);
+            StorageTransferCoordinator.tick();
+        } else {
+            StorageTransferCoordinator.clear();
         }
     }
 

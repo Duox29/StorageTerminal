@@ -25,7 +25,7 @@ public class MixinGui {
         AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
         StorageManager storageManager = ModuleManager.INSTANCE.getModule(StorageManager.class);
 
-        boolean suppressContainer = (autoStash != null && autoStash.isEnabled())
+        boolean suppressContainer = (autoStash != null && autoStash.isSilentMode())
                 || (storageManager != null && storageManager.isSilentMode());
 
         if (suppressContainer && (screen instanceof ContainerScreen || screen instanceof ShulkerBoxScreen)) {

@@ -31,19 +31,33 @@ public class StashPlanner {
         int startInv = includeHotbar ? 0 : 9;
 
         for (int i = startInv; i < 36; i++) {
-            ItemStack stack = player.getInventory().getItem(i);
-            if (stack.isEmpty()) continue;
-
-            String itemId = ItemSerializer.serialize(stack);
-
-            BlockPos bestChest = scoringEngine.findBestChest(itemId, player.blockPosition(), range,
-                    cache, processedChests, forceDump);
-
-            if (bestChest != null) {
-                plan.computeIfAbsent(bestChest, k -> new ArrayList<>()).add(i);
-            }
+            addInventorySlot(plan, player, i, range, cache, processedChests, forceDump);
         }
 
         return plan;
+    }
+
+    public Map<BlockPos, List<Integer>> calculatePlanForSlot(LocalPlayer player, int inventorySlot,
+                                                               double range, Map<String, Map<String, Integer>> cache,
+                                                               Set<BlockPos> processedChests, boolean forceDump) {
+        Map<BlockPos, List<Integer>> plan = new LinkedHashMap<>();
+        if (player != null && inventorySlot >= 0 && inventorySlot < 36) {
+            addInventorySlot(plan, player, inventorySlot, range, cache, processedChests, forceDump);
+        }
+        return plan;
+    }
+
+    private void addInventorySlot(Map<BlockPos, List<Integer>> plan, LocalPlayer player,
+                                  int inventorySlot, double range, Map<String, Map<String, Integer>> cache,
+                                  Set<BlockPos> processedChests, boolean forceDump) {
+        ItemStack stack = player.getInventory().getItem(inventorySlot);
+        if (stack.isEmpty()) return;
+
+        String itemId = ItemSerializer.serialize(stack);
+        BlockPos bestChest = scoringEngine.findBestChest(itemId, player.blockPosition(), range,
+                cache, processedChests, forceDump);
+        if (bestChest != null) {
+            plan.computeIfAbsent(bestChest, k -> new ArrayList<>()).add(inventorySlot);
+        }
     }
 }

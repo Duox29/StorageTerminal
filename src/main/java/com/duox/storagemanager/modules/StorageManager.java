@@ -1,6 +1,8 @@
 package com.duox.storagemanager.modules;
 
 import com.duox.storagemanager.gui.StorageScreen;
+import com.duox.storagemanager.logic.StorageTransferCoordinator;
+import com.duox.storagemanager.system.ModuleManager;
 import com.duox.storagemanager.system.Module;
 import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
@@ -49,6 +51,11 @@ public class StorageManager extends Module {
     private BlockPos returnToContainerPos = null;
     private int waitTimer = 0;
     private int silentContainerId = -1;
+    private int targetedInventorySlot = -1;
+    private int targetedRequestedCount;
+    private int targetedTransferredCount;
+    private ItemStack targetedExpectedStack = ItemStack.EMPTY;
+    private boolean deferredRetrieval;
 
     public final NumberSetting panelX = new NumberSetting("Panel X", 300, 0, 2560, 1);
     public final NumberSetting panelY = new NumberSetting("Panel Y", 100, 0, 1440, 1);
@@ -95,12 +102,21 @@ public class StorageManager extends Module {
 
     @Override
     public void onDisable() {
+        StorageTransferCoordinator.clear();
+        if (mc.player != null && silentContainerId != -1
+                && mc.player.containerMenu.containerId == silentContainerId) {
+            InventoryUtils.closeContainerSilent();
+        }
         resetState();
         clearRequestQueue();
     }
 
     @Override
     public void onWorldChanged() {
+        if (mc.player != null && silentContainerId != -1
+                && mc.player.containerMenu.containerId == silentContainerId) {
+            InventoryUtils.closeContainerSilent();
+        }
         resetState();
         clearRequestQueue();
     }
@@ -110,6 +126,13 @@ public class StorageManager extends Module {
         if (mc.player == null || mc.level == null) {
             this.setEnabled(false); // Disable when the player leaves the world.
             return;
+        }
+        if (targetedInventorySlot >= 0 && !mc.player.containerMenu.getCarried().isEmpty()) return;
+
+        if (currentState == State.IDLE && deferredRetrieval && !isStashActive()
+                && !StorageTransferCoordinator.hasPendingTransfers()) {
+            deferredRetrieval = false;
+            startRetrieval();
         }
 
         switch (currentState) {
@@ -185,11 +208,44 @@ public class StorageManager extends Module {
             return;
         }
 
+        if (targetedInventorySlot >= 0 || StorageTransferCoordinator.hasPendingTransfers()
+                || (currentState == State.IDLE && isStashActive())
+                || mc.player != null && !mc.player.containerMenu.getCarried().isEmpty()) {
+            deferredRetrieval = true;
+            return;
+        }
+
         movePendingRequestsToActive();
         if (currentState == State.IDLE) {
             captureCraftingTableContext();
             currentState = State.PLANNING;
         }
+    }
+
+    /** Starts a direct drag transfer into one player inventory slot. */
+    public boolean startTargetedRetrieval(String itemId, int quantity, int inventorySlot,
+                                           ItemStack expectedStack) {
+        if (!isEnabled() || mc.player == null || !mc.player.containerMenu.getCarried().isEmpty()
+                || currentState != State.IDLE || !activeRequests.isEmpty() || isStashActive()
+                || inventorySlot < 0 || inventorySlot >= InventoryUtils.PLAYER_INVENTORY_SIZE
+                || quantity <= 0 || itemId == null || expectedStack == null || expectedStack.isEmpty()
+                || !itemId.equals(ItemSerializer.serialize(expectedStack))) {
+            return false;
+        }
+
+        targetedInventorySlot = inventorySlot;
+        targetedRequestedCount = quantity;
+        targetedTransferredCount = 0;
+        targetedExpectedStack = expectedStack.copy();
+        activeRequests.put(itemId, quantity);
+        captureCraftingTableContext();
+        currentState = State.PLANNING;
+        return true;
+    }
+
+    private boolean isStashActive() {
+        AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+        return stash != null && stash.isEnabled() && !stash.isWaitingForStorage();
     }
 
     private void movePendingRequestsToActive() {
@@ -230,6 +286,11 @@ public class StorageManager extends Module {
         retrievalPlan.clear();
         retrievalIterator = null;
         currentTargetEntry = null;
+        targetedInventorySlot = -1;
+        targetedRequestedCount = 0;
+        targetedTransferredCount = 0;
+        targetedExpectedStack = ItemStack.EMPTY;
+        deferredRetrieval = false;
     }
 
     private void calculateRetrievalPlan() {
@@ -305,7 +366,7 @@ public class StorageManager extends Module {
             }
 
             // Otherwise match by base id for auto-crafting requests.
-            if (needed > 0 && !reqId.startsWith("{")) {
+            if (targetedInventorySlot < 0 && needed > 0 && !reqId.startsWith("{")) {
                 for (Map.Entry<String, Integer> chestItem : contents.entrySet()) {
                     String cacheKey = chestItem.getKey();
 
@@ -347,6 +408,10 @@ public class StorageManager extends Module {
 
     private void finishOrPlanNext() {
         currentState = activeRequests.isEmpty() ? State.IDLE : State.PLANNING;
+        if (currentState == State.IDLE) {
+            targetedInventorySlot = -1;
+            targetedExpectedStack = ItemStack.EMPTY;
+        }
     }
 
     private int getMinRelevantQuantity(Map<String, Integer> chestContents, Map<String, Integer> needs) {
@@ -370,7 +435,13 @@ public class StorageManager extends Module {
             currentTargetEntry = retrievalIterator.next();
             currentState = State.OPENING_CHEST;
         } else {
-            sendMessage("Retrieval complete.");
+            if (targetedInventorySlot >= 0) {
+                sendMessage(targetedTransferredCount == 0
+                        ? "No dragged items could be placed in the target slot."
+                        : "Drag retrieved " + targetedTransferredCount + "/" + targetedRequestedCount + " items.");
+            } else {
+                sendMessage("Retrieval complete.");
+            }
             if (!activeRequests.isEmpty()) {
                 currentState = State.PLANNING;
             } else {
@@ -413,7 +484,7 @@ public class StorageManager extends Module {
     }
 
     private void waitForContainer() {
-        if (silentContainerId != -1) {
+        if (silentContainerId != -1 && mc.player.containerMenu.containerId == silentContainerId) {
             currentState = State.WITHDRAWING;
             return;
         }
@@ -425,7 +496,10 @@ public class StorageManager extends Module {
     }
 
     public void onSilentContainerOpen(int containerId, MenuType<?> menuType) {
-        this.silentContainerId = containerId;
+        if (currentState == State.WAITING_FOR_OPEN && currentTargetEntry != null
+                && InventoryUtils.matchesStorageMenu(currentTargetEntry.getKey(), menuType)) {
+            this.silentContainerId = containerId;
+        }
     }
 
     public boolean isSilentMode() {
@@ -439,6 +513,10 @@ public class StorageManager extends Module {
         }
 
         AbstractContainerMenu menu = mc.player.containerMenu;
+        if (silentContainerId == -1 || menu.containerId != silentContainerId) {
+            currentState = State.CLOSING_CHEST;
+            return;
+        }
         int containerSlots = menu.slots.size() - InventoryUtils.PLAYER_INVENTORY_SIZE;
 
         if (containerSlots <= 0) {
@@ -460,6 +538,8 @@ public class StorageManager extends Module {
 
             String itemId = ItemSerializer.serialize(stack);
             if (!itemsToTake.containsKey(itemId)) continue;
+            if (targetedInventorySlot >= 0
+                    && !ItemStack.isSameItemSameComponents(stack, targetedExpectedStack)) continue;
 
             int needed = itemsToTake.get(itemId);
             if (needed <= 0) continue;
@@ -476,18 +556,52 @@ public class StorageManager extends Module {
         int inSlot = stack.getCount();
         int actualTaken;
 
-        if (inSlot <= needed) {
+        if (targetedInventorySlot >= 0) {
+            actualTaken = transferToTargetSlot(menu, slotIndex, stack, needed, containerSlots);
+        } else if (inSlot <= needed) {
             actualTaken = transferFullStack(menu, slotIndex, stack);
         } else {
             actualTaken = transferPartialStack(menu, slotIndex, needed, containerSlots);
         }
 
         if (actualTaken > 0) {
+            if (targetedInventorySlot >= 0) targetedTransferredCount += actualTaken;
             updateCache(itemId, actualTaken);
             currentTargetEntry.getValue().put(itemId, needed - actualTaken);
             return true;
         }
         return false;
+    }
+
+    private int transferToTargetSlot(AbstractContainerMenu menu, int chestSlot, ItemStack stack,
+                                     int needed, int containerSlots) {
+        int playerSlot = InventoryUtils.mapInventorySlotToMenuSlot(targetedInventorySlot, containerSlots);
+        if (playerSlot < containerSlots || playerSlot >= menu.slots.size()
+                || !menu.getCarried().isEmpty() || !menu.getSlot(playerSlot).mayPlace(stack)
+                || !ItemStack.isSameItemSameComponents(stack, targetedExpectedStack)) return 0;
+
+        ItemStack existing = menu.getSlot(playerSlot).getItem();
+        if (!existing.isEmpty() && !ItemStack.isSameItemSameComponents(existing, stack)) return 0;
+
+        int max = Math.min(stack.getMaxStackSize(), menu.getSlot(playerSlot).getMaxStackSize(stack));
+        int space = max - existing.getCount();
+        int move = Math.min(Math.min(needed, stack.getCount()), space);
+        if (move <= 0) return 0;
+
+        ItemStack itemToMove = stack.copy();
+        int sourceCount = stack.getCount();
+        int before = existing.getCount();
+        InventoryUtils.pickup(menu, chestSlot);
+        if (move == sourceCount && existing.isEmpty()) {
+            InventoryUtils.pickup(menu, playerSlot);
+        } else {
+            for (int i = 0; i < move; i++) InventoryUtils.dropOne(menu, playerSlot);
+        }
+        if (!menu.getCarried().isEmpty()) InventoryUtils.pickup(menu, chestSlot);
+
+        ItemStack after = menu.getSlot(playerSlot).getItem();
+        return !after.isEmpty() && ItemStack.isSameItemSameComponents(after, itemToMove)
+                ? Math.max(0, after.getCount() - before) : 0;
     }
 
     private int transferFullStack(AbstractContainerMenu menu, int slotIndex, ItemStack stack) {
@@ -538,7 +652,10 @@ public class StorageManager extends Module {
     }
 
     private void closeSilent() {
-        InventoryUtils.closeContainerSilent();
+        if (mc.player != null && silentContainerId != -1
+                && mc.player.containerMenu.containerId == silentContainerId) {
+            InventoryUtils.closeContainerSilent();
+        }
         silentContainerId = -1;
 
         moveToNextTarget();

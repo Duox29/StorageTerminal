@@ -8,10 +8,12 @@ import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.InventoryUtils;
+import com.duox.storagemanager.utils.ItemSerializer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.entity.BlockEntity;
 
 import java.util.*;
@@ -21,7 +23,6 @@ public class AutoStash extends Module {
 
     private static final int HOTBAR_SIZE = 9;
     private static final int PLAYER_INVENTORY_SIZE = 36;
-    private static final int MAIN_INVENTORY_SIZE = 27;
     private static final int DEFAULT_WAIT_TICKS = 20;
     private static final int SERVER_SYNC_WAIT_TICKS = 10;
 
@@ -43,6 +44,10 @@ public class AutoStash extends Module {
     private Map.Entry<BlockPos, List<Integer>> currentStashEntry;
     private StashPlanner stashPlanner;
     private boolean isDumpMode = false;
+    private Integer targetedInventorySlot = null;
+    private int targetedInitialCount = 0;
+    private int targetedExpectedRemainingCount = 0;
+    private ItemStack targetedExpectedStack = ItemStack.EMPTY;
 
     public AutoStash() {
         super("AutoStash", "Scans chests to build a cache, then intelligently stashes items.");
@@ -68,6 +73,33 @@ public class AutoStash extends Module {
         rebuildCacheNextRun = true;
     }
 
+    public boolean startTargetedStash(int inventorySlot, ItemStack expectedStack) {
+        if (isEnabled() || mc.player == null || mc.level == null
+                || !mc.player.containerMenu.getCarried().isEmpty()
+                || inventorySlot < 0 || inventorySlot >= PLAYER_INVENTORY_SIZE
+                || expectedStack == null || expectedStack.isEmpty()
+                || !ItemStack.isSameItemSameComponents(mc.player.getInventory().getItem(inventorySlot), expectedStack)
+                || mc.player.getInventory().getItem(inventorySlot).getCount() != expectedStack.getCount()) {
+            return false;
+        }
+        targetedInventorySlot = inventorySlot;
+        targetedExpectedStack = expectedStack.copy();
+        targetedInitialCount = mc.player.getInventory().getItem(inventorySlot).getCount();
+        targetedExpectedRemainingCount = targetedInitialCount;
+        isDumpMode = false;
+        setEnabled(true);
+        // onEnable() can immediately disable the module if no suitable chest exists.
+        return isEnabled();
+    }
+
+    public boolean isSilentMode() {
+        return isEnabled() && currentState != State.IDLE && currentState != State.WAITING_FOR_TRANSFER;
+    }
+
+    public boolean isWaitingForStorage() {
+        return isEnabled() && currentState == State.WAITING_FOR_TRANSFER;
+    }
+
     @Override
     public void onEnable() {
         if (!validateEnvironment()) {
@@ -77,7 +109,16 @@ public class AutoStash extends Module {
         resetState();
         initializePlanner();
 
-        if (rebuildCacheNextRun) {
+        StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
+        if (storage != null && storage.isRetrieving()) {
+            currentState = State.WAITING_FOR_TRANSFER;
+        } else {
+            beginOperation();
+        }
+    }
+
+    private void beginOperation() {
+        if (rebuildCacheNextRun && targetedInventorySlot == null) {
             startRebuildCache();
         } else {
             startSmartStash();
@@ -86,16 +127,20 @@ public class AutoStash extends Module {
 
     @Override
     public void onDisable() {
-        closeContainerSafe();
+        if (silentContainerId != -1 && mc.player != null
+                && mc.player.containerMenu.containerId == silentContainerId) closeContainerSafe();
         resetState();
         this.isDumpMode = false;
-
+        targetedInventorySlot = null;
+        targetedInitialCount = 0;
+        targetedExpectedRemainingCount = 0;
+        targetedExpectedStack = ItemStack.EMPTY;
     }
 
     @Override
     public void onWorldChanged() {
-        resetState();
-        this.isDumpMode = false;
+        if (isEnabled()) setEnabled(false);
+        else resetState();
     }
 
     private void resetState() {
@@ -126,7 +171,25 @@ public class AutoStash extends Module {
     @Override
     public void onTick() {
         if (!validateEnvironment()) return;
+        // A real inventory drag can start while the visible menu is still
+        // current. Do not open or close a silent menu with that stack in hand.
+        if (targetedInventorySlot != null && !mc.player.containerMenu.getCarried().isEmpty()) return;
+        // A drag authorizes only the original stack. A player or another mod may
+        // change that slot while we wait for a silent chest to open or sync.
+        if (targetedInventorySlot != null && !targetedStackMatchesExpected()) {
+            sendMessage("Dragged stack changed; stash cancelled to protect inventory.");
+            setEnabled(false);
+            return;
+        }
         this.currentState = handleState(this.currentState);
+    }
+
+    private boolean targetedStackMatchesExpected() {
+        if (targetedInventorySlot == null) return true;
+        var stack = mc.player.getInventory().getItem(targetedInventorySlot);
+        if (targetedExpectedRemainingCount == 0) return stack.isEmpty();
+        return !stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, targetedExpectedStack)
+                && stack.getCount() == targetedExpectedRemainingCount;
     }
 
     private boolean validateEnvironment() {
@@ -141,6 +204,12 @@ public class AutoStash extends Module {
     private State handleState(State state) {
         return switch (state) {
             case IDLE -> State.IDLE;
+            case WAITING_FOR_TRANSFER -> {
+                StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
+                if (storage != null && storage.isRetrieving()) yield State.WAITING_FOR_TRANSFER;
+                beginOperation();
+                yield currentState;
+            }
 
             case SCANNING_WORLD -> handleScanningWorld();
             case OPENING_FOR_SCAN -> handleOpeningContainer(State.WAITING_FOR_SCAN_OPEN);
@@ -186,7 +255,7 @@ public class AutoStash extends Module {
     }
 
     private State handleScanningContents() {
-        if (mc.player.containerMenu != null) {
+        if (silentContainerId != -1 && mc.player.containerMenu.containerId == silentContainerId) {
             ChestCache.updateFromContainerMenu(currentTarget, mc.player.containerMenu, mc);
         }
         return State.CLOSING_AFTER_SCAN;
@@ -197,17 +266,11 @@ public class AutoStash extends Module {
 
         forceRefreshActiveCache();
 
-        stashQueue = stashPlanner.calculatePlan(
-                mc.player,
-                includeHotbar.getValue(),
-                range.getValue(),
-                ChestCache.getActiveCache(),
-                processedChests,
-                isDumpMode
-        );
+        stashQueue = planStash();
 
         if (stashQueue.isEmpty()) {
-            sendMessage(isDumpMode ? "No suitable chests found for dumping." : "Nothing to stash.");
+            sendMessage(targetedInventorySlot != null ? "No suitable chest found for dragged item."
+                    : isDumpMode ? "No suitable chests found for dumping." : "Nothing to stash.");
             this.setEnabled(false);
             isDumpMode = false;
             return;
@@ -217,19 +280,47 @@ public class AutoStash extends Module {
         moveToNextStashTarget();
     }
 
+    private Map<BlockPos, List<Integer>> planStash() {
+        if (targetedInventorySlot != null) {
+            return stashPlanner.calculatePlanForSlot(mc.player, targetedInventorySlot, range.getValue(),
+                    ChestCache.getActiveCache(), processedChests, true);
+        }
+        return stashPlanner.calculatePlan(mc.player, includeHotbar.getValue(), range.getValue(),
+                ChestCache.getActiveCache(), processedChests, isDumpMode);
+    }
+
     private void moveToNextStashTarget() {
         if (stashIterator != null && stashIterator.hasNext()) {
             currentStashEntry = stashIterator.next();
             currentTarget = currentStashEntry.getKey();
             currentState = State.OPENING_FOR_STASH;
         } else {
+            if (targetedInventorySlot != null) reportTargetedStashResult();
             this.setEnabled(false);
             currentState = State.IDLE;
         }
     }
 
+    private void reportTargetedStashResult() {
+        var remainingStack = mc.player.getInventory().getItem(targetedInventorySlot);
+        int remaining = !remainingStack.isEmpty()
+                && ItemStack.isSameItemSameComponents(remainingStack, targetedExpectedStack)
+                ? remainingStack.getCount() : 0;
+        int moved = Math.max(0, targetedInitialCount - remaining);
+        if (moved == 0) {
+            sendMessage("Could not stash dragged item; available chests may be full.");
+        } else if (remaining > 0) {
+            sendMessage("Stashed " + moved + "/" + targetedInitialCount + " dragged items (partial).");
+        } else {
+            sendMessage("Stashed " + moved + " dragged items.");
+        }
+    }
+
     private State handleStashingItems() {
         AbstractContainerMenu menu = mc.player.containerMenu;
+        if (silentContainerId == -1 || menu.containerId != silentContainerId) {
+            return State.CLOSING_AFTER_STASH;
+        }
         int containerSlots = menu.slots.size() - PLAYER_INVENTORY_SIZE;
 
         if (containerSlots <= 0) return State.CLOSING_AFTER_STASH;
@@ -241,10 +332,28 @@ public class AutoStash extends Module {
         Iterator<Integer> it = slotsToMove.iterator();
         while (it.hasNext() && moves < limit) {
             int invSlotIndex = it.next();
-            int menuSlotId = mapInventorySlotToMenuSlot(invSlotIndex, containerSlots);
+            int menuSlotId = InventoryUtils.mapInventorySlotToMenuSlot(invSlotIndex, containerSlots);
 
             if (menu.getSlot(menuSlotId).hasItem()) {
+                int before = menu.getSlot(menuSlotId).getItem().getCount();
+                if (targetedInventorySlot != null && (invSlotIndex != targetedInventorySlot
+                        || before != targetedExpectedRemainingCount
+                        || !ItemStack.isSameItemSameComponents(menu.getSlot(menuSlotId).getItem(), targetedExpectedStack))) {
+                    sendMessage("Dragged stack changed; stash cancelled to protect inventory.");
+                    setEnabled(false);
+                    return State.IDLE;
+                }
                 InventoryUtils.sendClickPacket(menu, menuSlotId, 0, ContainerInput.QUICK_MOVE);
+                if (targetedInventorySlot != null) {
+                    var after = menu.getSlot(menuSlotId).getItem();
+                    if ((!after.isEmpty() && !ItemStack.isSameItemSameComponents(after, targetedExpectedStack))
+                            || after.getCount() > before) {
+                        sendMessage("Dragged stack changed during transfer; stash cancelled.");
+                        setEnabled(false);
+                        return State.IDLE;
+                    }
+                    targetedExpectedRemainingCount = after.getCount();
+                }
                 moves++;
             }
             it.remove();
@@ -258,32 +367,19 @@ public class AutoStash extends Module {
         return State.STASHING_ITEMS;
     }
 
-    /* Maps an inventory slot to its menu slot id. */
-    private int mapInventorySlotToMenuSlot(int invSlotIndex, int containerSlots) {
-        if (invSlotIndex < HOTBAR_SIZE) {
-            return containerSlots + MAIN_INVENTORY_SIZE + invSlotIndex;
-        } else {
-            return containerSlots + (invSlotIndex - HOTBAR_SIZE);
-        }
-    }
-
     private State handleWaitingForUpdate() {
         if (--waitTimer <= 0) {
-            // Refresh the cache after moving items.
+            // A manually opened or replaced menu must never overwrite this chest's cache.
+            if (silentContainerId == -1 || mc.player.containerMenu.containerId != silentContainerId) {
+                return State.CLOSING_AFTER_STASH;
+            }
             ChestCache.updateFromContainerMenu(currentTarget, mc.player.containerMenu, mc);
             processedChests.add(currentTarget);
 
             // Re-plan if items remain.
             if (hasItemsToStash()) {
                 forceRefreshActiveCache();
-                stashQueue = stashPlanner.calculatePlan(
-                        mc.player,
-                        includeHotbar.getValue(),
-                        range.getValue(),
-                        ChestCache.getActiveCache(),
-                        processedChests,
-                        false
-                );
+                stashQueue = planStash();
 
                 if (!stashQueue.isEmpty()) {
                     stashIterator = stashQueue.entrySet().iterator();
@@ -304,7 +400,7 @@ public class AutoStash extends Module {
     }
 
     private State handleWaitingForContainer(State successState, State timeoutState) {
-        if (silentContainerId != -1) {
+        if (silentContainerId != -1 && mc.player.containerMenu.containerId == silentContainerId) {
             return successState;
         }
         if (--waitTimer <= 0) {
@@ -329,12 +425,18 @@ public class AutoStash extends Module {
     }
 
     private void closeContainerSafe() {
-        InventoryUtils.closeContainerSilent();
+        if (mc.player != null && silentContainerId != -1
+                && mc.player.containerMenu.containerId == silentContainerId) {
+            InventoryUtils.closeContainerSilent();
+        }
         silentContainerId = -1;
     }
 
     public void onSilentContainerOpen(int containerId, net.minecraft.world.inventory.MenuType<?> menuType) {
-        this.silentContainerId = containerId;
+        if ((currentState == State.WAITING_FOR_SCAN_OPEN || currentState == State.WAITING_FOR_STASH_OPEN)
+                && InventoryUtils.matchesStorageMenu(currentTarget, menuType)) {
+            this.silentContainerId = containerId;
+        }
     }
 
     public void forceRefreshActiveCache() {
@@ -342,6 +444,12 @@ public class AutoStash extends Module {
     }
 
     private boolean hasItemsToStash() {
+        if (targetedInventorySlot != null) {
+            var stack = mc.player.getInventory().getItem(targetedInventorySlot);
+            return targetedExpectedRemainingCount > 0 && !stack.isEmpty()
+                    && ItemStack.isSameItemSameComponents(stack, targetedExpectedStack)
+                    && stack.getCount() == targetedExpectedRemainingCount;
+        }
         int start = includeHotbar.getValue() ? 0 : HOTBAR_SIZE;
         for (int i = start; i < PLAYER_INVENTORY_SIZE; i++) {
             if (!mc.player.getInventory().getItem(i).isEmpty()) {
@@ -356,7 +464,7 @@ public class AutoStash extends Module {
     }
 
     private enum State {
-        IDLE,
+        IDLE, WAITING_FOR_TRANSFER,
         SCANNING_WORLD, OPENING_FOR_SCAN, WAITING_FOR_SCAN_OPEN, SCANNING_CONTENTS, CLOSING_AFTER_SCAN,
         OPENING_FOR_STASH, WAITING_FOR_STASH_OPEN, STASHING_ITEMS, WAITING_FOR_UPDATE, CLOSING_AFTER_STASH
     }

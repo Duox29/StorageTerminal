@@ -1,26 +1,52 @@
 package com.duox.storagemanager.mixin;
 
+import com.duox.storagemanager.gui.StorageDragController;
 import com.duox.storagemanager.gui.StoragePanel;
+import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
 import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.util.HashSet;
+import java.util.Set;
+
 @Mixin(AbstractContainerScreen.class)
 public abstract class MixinContainerScreen extends Screen {
 
+    @Shadow
+    private boolean skipNextRelease;
+
+    @Shadow
+    protected boolean isQuickCrafting;
+
+    @Shadow
+    protected Set<Slot> quickCraftSlots;
+
     @Unique
     private StoragePanel storagePanel;
+
+    @Unique
+    private StorageDragController storageDragController;
+
+    // An overlay mouse-down must also own its matching mouse-up. Otherwise
+    // vanilla may treat the release as a click on a slot behind the panel.
+    @Unique
+    private final Set<Integer> storageOverlayPressButtons = new HashSet<>();
 
     protected MixinContainerScreen(Component title) {
         super(title);
@@ -32,6 +58,8 @@ public abstract class MixinContainerScreen extends Screen {
         // Show the panel in chest and shulker screens while StorageManager is enabled.
         if (sm != null && sm.isEnabled()) {
             storagePanel = new StoragePanel(sm, sm.panelX.getInt(), sm.panelY.getInt());
+            storageDragController = new StorageDragController();
+            storagePanel.setDragController(storageDragController);
             this.addRenderableWidget(storagePanel);
         }
     }
@@ -43,20 +71,85 @@ public abstract class MixinContainerScreen extends Screen {
 
     @Inject(method = "removed", at = @At("TAIL"))
     private void onRemoved(CallbackInfo ci) {
-        clearPanelPendingRequests();
+        if (StorageTransferCoordinator.consumeRestoredScreenRemoval((Screen) (Object) this)) {
+            if (storageDragController != null) storageDragController.clear();
+            storageDragController = null;
+            storagePanel = null;
+        } else {
+            clearPanelPendingRequests();
+        }
     }
 
     @Unique
     private void clearPanelPendingRequests() {
+        storageOverlayPressButtons.clear();
         if (storagePanel == null) {
             return;
         }
+
+        // The player left this container. Do not run queued drag transfers after
+        // its UI has closed (silent opens do not remove the original screen).
+        StorageTransferCoordinator.clear();
+        if (storageDragController != null) storageDragController.clear();
+        storageDragController = null;
 
         StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
         if (sm != null) {
             sm.clearPendingRequests();
         }
         storagePanel = null;
+    }
+
+    @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
+    private void onMouseClicked(MouseButtonEvent event, boolean doubleClick,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (hasStaleMenu()) {
+            if (!doubleClick && event.button() == InputConstants.MOUSE_BUTTON_LEFT
+                    && storagePanel != null && storageDragController != null
+                    && StorageTransferCoordinator.hasPendingTransfers()) {
+                if (storagePanel.isMouseOver(event.x(), event.y())) {
+                    if (!event.hasShiftDown() && !event.hasControlDown() && !event.hasAltDown()
+                            && (event.modifiers() & InputConstants.MOD_SUPER) == 0) {
+                        storagePanel.beginPanelDragAt(event.x(), event.y());
+                    }
+                } else {
+                    storageDragController.beginInventory(event,
+                            (AbstractContainerScreen<?>) (Object) this, storagePanel, true);
+                }
+            }
+            cir.setReturnValue(true);
+            return;
+        }
+        // The storage overlay is rendered above the other screen widgets.
+        // Give it first chance at input too, even when recipe-book widgets overlap it.
+        if (storagePanel != null && storagePanel.isMouseOver(event.x(), event.y())
+                && storagePanel.mouseClicked(event, doubleClick)) {
+            storageOverlayPressButtons.add(event.button());
+            this.setFocused(storagePanel);
+            cir.setReturnValue(true);
+            return;
+        }
+        if (!doubleClick && storagePanel != null && storageDragController != null) {
+            storageDragController.beginInventory(event,
+                    (AbstractContainerScreen<?>) (Object) this, storagePanel, false);
+        }
+    }
+
+    @Inject(method = "mouseClicked", at = @At("TAIL"))
+    private void afterMouseClicked(MouseButtonEvent event, boolean doubleClick,
+            CallbackInfoReturnable<Boolean> cir) {
+        if (storageDragController != null) {
+            storageDragController.confirmInventoryPickup((AbstractContainerScreen<?>) (Object) this);
+        }
+    }
+
+    @Inject(method = "extractCarriedItem", at = @At("TAIL"))
+    private void onExtractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY,
+            CallbackInfo ci) {
+        if (storagePanel != null && storageDragController != null) {
+            storageDragController.render(graphics,
+                    (AbstractContainerScreen<?>) (Object) this, storagePanel, mouseX, mouseY);
+        }
     }
 
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
@@ -70,6 +163,20 @@ public abstract class MixinContainerScreen extends Screen {
     @Inject(method = "mouseDragged", at = @At("HEAD"), cancellable = true)
     private void onMouseDragged(MouseButtonEvent event, double dragX, double dragY,
             CallbackInfoReturnable<Boolean> cir) {
+        if (hasStaleMenu()) {
+            if (storagePanel != null && storageDragController != null) {
+                storageDragController.mouseDragged(event, storagePanel,
+                        (AbstractContainerScreen<?>) (Object) this);
+            }
+            cir.setReturnValue(true);
+            return;
+        }
+        if (storagePanel != null && storageDragController != null
+                && storageDragController.mouseDragged(event, storagePanel,
+                        (AbstractContainerScreen<?>) (Object) this)) {
+            cir.setReturnValue(true);
+            return;
+        }
         // Container slot dragging must not steal an active panel or scrollbar drag.
         if (storagePanel != null && storagePanel.isHandlingDrag()
                 && storagePanel.mouseDragged(event, dragX, dragY)) {
@@ -79,12 +186,51 @@ public abstract class MixinContainerScreen extends Screen {
 
     @Inject(method = "mouseReleased", at = @At("HEAD"), cancellable = true)
     private void onMouseReleased(MouseButtonEvent event, CallbackInfoReturnable<Boolean> cir) {
+        if (hasStaleMenu()) {
+            if (storagePanel != null && storageDragController != null) {
+                storageDragController.mouseReleased(event,
+                        (AbstractContainerScreen<?>) (Object) this, storagePanel);
+            }
+            resetVanillaDragState();
+            cir.setReturnValue(true);
+            return;
+        }
+        if (storagePanel != null && storageDragController != null
+                && storageDragController.mouseReleased(event,
+                        (AbstractContainerScreen<?>) (Object) this, storagePanel)) {
+            storageOverlayPressButtons.remove(event.button());
+            resetVanillaDragState();
+            cir.setReturnValue(true);
+            return;
+        }
         if (storagePanel != null && storagePanel.isHandlingDrag()
                 && event.button() == InputConstants.MOUSE_BUTTON_LEFT) {
-            this.setDragging(false);
+            storageOverlayPressButtons.remove(event.button());
+            resetVanillaDragState();
             storagePanel.mouseReleased(event);
             cir.setReturnValue(true);
+            return;
         }
+        if (storagePanel != null && storageOverlayPressButtons.remove(event.button())) {
+            storagePanel.mouseReleased(event);
+            resetVanillaDragState();
+            cir.setReturnValue(true);
+        }
+    }
+
+    @Unique
+    private void resetVanillaDragState() {
+        this.setDragging(false);
+        this.skipNextRelease = false;
+        this.isQuickCrafting = false;
+        this.quickCraftSlots.clear();
+    }
+
+    @Unique
+    private boolean hasStaleMenu() {
+        return storagePanel != null && Minecraft.getInstance().player != null
+                && ((AbstractContainerScreen<?>) (Object) this).getMenu()
+                        != Minecraft.getInstance().player.containerMenu;
     }
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)

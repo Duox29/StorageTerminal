@@ -18,22 +18,21 @@ public class MixinClientPacketListener {
 
     @Inject(method = "handleOpenScreen", at = @At("HEAD"))
     private void onOpenScreen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
-        AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-        if (autoStash != null) {
-            if (autoStash.isEnabled()) {
-                autoStash.onSilentContainerOpen(packet.getContainerId(), packet.getType());
-            } else {
-                // Treat the open as manual if a block was clicked.
-                BlockPos last = ManualContainerTracker.getLastInteractedBlock();
-                if (last != null) {
-                    ManualContainerTracker.onManualContainerOpen(last, Minecraft.getInstance());
-                }
-            }
-        }
-
         StorageManager storageManager = ModuleManager.INSTANCE.getModule(StorageManager.class);
         if (storageManager != null && storageManager.isSilentMode()) {
             storageManager.onSilentContainerOpen(packet.getContainerId(), packet.getType());
+            return;
+        }
+        AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
+        if (autoStash != null && autoStash.isSilentMode()) {
+            autoStash.onSilentContainerOpen(packet.getContainerId(), packet.getType());
+            return;
+        }
+        // Treat the open as manual if a block was clicked.
+        BlockPos last = ManualContainerTracker.getLastInteractedBlock();
+        if (last != null) {
+            ManualContainerTracker.onManualContainerOpen(last, Minecraft.getInstance(),
+                    packet.getContainerId(), packet.getType());
         }
     }
 }
