@@ -16,6 +16,7 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.narration.NarratableEntry;
@@ -201,6 +202,11 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 && mouseY >= first.getY() && mouseY <= last.getY() + BUTTON_HEIGHT;
     }
 
+    private boolean isOverHeader(double mouseX, double mouseY) {
+        return mouseX >= x && mouseX <= x + metrics.width()
+                && mouseY >= y && mouseY <= y + HEADER_HEIGHT;
+    }
+
     private ItemGridView.Layout layout() {
         return metrics.layoutAt(x, y, 13, 6);
     }
@@ -246,9 +252,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
         VanillaStorageGui.panel(graphics, x, y, metrics.width(), metrics.height());
 
-        boolean isHeaderHovered = mouseX >= x && mouseX <= x + metrics.width()
-                && mouseY >= y && mouseY <= y + HEADER_HEIGHT;
-        if (isHeaderHovered) {
+        if (isOverHeader(mouseX, mouseY) && metrics.width() > 8) {
             graphics.fill(x + 4, y + 4, x + metrics.width() - 4, y + HEADER_HEIGHT,
                     StorageTheme.HEADER_HOVER);
         }
@@ -256,20 +260,34 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         int queued = StorageTransferCoordinator.queuedCount();
         if (queued > 0) graphics.text(mc.font, "Queued: " + queued,
                 x + metrics.width() - 70, y + 8, StorageTheme.TEXT_TITLE, false);
-        searchBox.extractRenderState(graphics, mouseX, mouseY, partialTick);
-
-        requestButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        autoStashButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        recipeButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        hotbarButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        clearCacheButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        buildCacheButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
-        dumpButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        renderWidget(graphics, searchBox, mouseX, mouseY, partialTick);
+        renderWidget(graphics, requestButton, mouseX, mouseY, partialTick);
+        renderWidget(graphics, autoStashButton, mouseX, mouseY, partialTick);
+        for (ModernButton button : topButtons) {
+            renderWidget(graphics, button, mouseX, mouseY, partialTick);
+        }
         for (ModernButton categoryButton : categoryButtons) {
-            categoryButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+            renderWidget(graphics, categoryButton, mouseX, mouseY, partialTick);
         }
 
         itemGrid.render(graphics, layout(), mouseX, mouseY);
+    }
+
+    private void renderWidget(GuiGraphicsExtractor graphics, AbstractWidget widget,
+                              int mouseX, int mouseY, float partialTick) {
+        // Vanilla clips widget labels separately; even an off-screen label can
+        // otherwise produce a scissor outside the window and crash the renderer.
+        int inset = 4;
+        if (widget.getX() + widget.getWidth() - inset <= 0
+                || widget.getX() + inset >= graphics.guiWidth()
+                || widget.getY() + widget.getHeight() - inset <= 0
+                || widget.getY() + inset >= graphics.guiHeight()) return;
+        graphics.enableScissor(0, 0, graphics.guiWidth(), graphics.guiHeight());
+        try {
+            widget.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        } finally {
+            graphics.disableScissor();
+        }
     }
 
     @Override
@@ -290,12 +308,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
             return true;
         }
 
-        for (ModernButton categoryButton : categoryButtons) {
-            if (categoryButton.mouseClicked(event, false)) return true;
-        }
-
-        if (button == InputConstants.MOUSE_BUTTON_LEFT && mouseX >= x && mouseX <= x + metrics.width()
-                && mouseY >= y && mouseY <= y + HEADER_HEIGHT) {
+        if (button == InputConstants.MOUSE_BUTTON_LEFT && isOverHeader(mouseX, mouseY)) {
             isDragging = true;
             widgetFocused = true;
             dragOffsetX = (int) (mouseX - x);
@@ -315,6 +328,12 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
         if (clearCacheButton.mouseClicked(event, false)) return true;
         if (buildCacheButton.mouseClicked(event, false)) return true;
         if (dumpButton.mouseClicked(event, false)) return true;
+
+        // Buttons sit outside the panel border, so test every category before
+        // the panel surface starts swallowing clicks.
+        for (ModernButton categoryButton : categoryButtons) {
+            if (categoryButton.mouseClicked(event, false)) return true;
+        }
 
         if (button == InputConstants.MOUSE_BUTTON_LEFT && event.hasControlDown() && requestStackAt(event)) {
             return true;

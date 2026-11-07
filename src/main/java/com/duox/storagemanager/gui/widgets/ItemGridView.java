@@ -111,10 +111,15 @@ public class ItemGridView {
     }
 
     private void renderSlotBackgrounds(GuiGraphicsExtractor graphics, Layout layout) {
+        // Slots clipped by a window edge would push an empty clip rectangle.
+        int right = Math.min(graphics.guiWidth(), layout.gridX() + layout.gridWidth());
+        int bottom = Math.min(graphics.guiHeight(), layout.gridY() + layout.gridHeight());
         for (int row = 0; row < layout.rows(); row++) {
             for (int col = 0; col < layout.cols(); col++) {
                 int x = layout.gridX() + col * layout.slotSize();
                 int y = layout.gridY() + row * layout.slotSize();
+                if (y >= bottom) return;
+                if (x >= right) break;
                 VanillaStorageGui.slot(graphics, x, y, layout.slotSize());
             }
         }
@@ -131,9 +136,10 @@ public class ItemGridView {
             int x = layout.gridX() + (relIndex % layout.cols()) * layout.slotSize();
             int y = layout.gridY() + (relIndex / layout.cols()) * layout.slotSize();
             int slotSize = layout.slotSize();
+            if (x + slotSize <= 0 || y + slotSize <= 0) continue;
 
             boolean hovered = mouseX >= x && mouseX < x + slotSize && mouseY >= y && mouseY < y + slotSize;
-            if (hovered) {
+            if (hovered && slotSize > 2) {
                 graphics.fill(x + 1, y + 1, x + slotSize - 1, y + slotSize - 1,
                         StorageTheme.SLOT_HIGHLIGHT);
             }
@@ -146,7 +152,7 @@ public class ItemGridView {
             graphics.pose().popMatrix();
 
             int queued = storageManager.getQueued(entry.id);
-            if (queued > 0) {
+            if (queued > 0 && slotSize > 2) {
                 graphics.outline(x, y, slotSize , slotSize ,
                         StorageTheme.BTN_ACTIVE_BORDER);
             }
@@ -171,6 +177,7 @@ public class ItemGridView {
         int y = layout.gridY();
         int width = layout.scrollbarWidth();
         int height = layout.gridHeight();
+        if (width <= 0 || height <= 0) return;
 
         VanillaStorageGui.inset(graphics, x, y, width, height);
 
@@ -181,10 +188,14 @@ public class ItemGridView {
 
         int thumbHeight = thumbHeight(height, totalRows, layout.rows());
         int thumbY = y + (int) ((height - thumbHeight) * scrollPosition);
-        graphics.fill(x + 2, thumbY + 1, x + width - 2, thumbY + thumbHeight - 1,
-                StorageTheme.SCROLLBAR_THUMB);
-        graphics.outline(x + 1, thumbY, width - 2, thumbHeight,
-                StorageTheme.SCROLLBAR_BORDER);
+        if (width > 4 && thumbHeight > 2) {
+            graphics.fill(x + 2, thumbY + 1, x + width - 2, thumbY + thumbHeight - 1,
+                    StorageTheme.SCROLLBAR_THUMB);
+        }
+        if (width > 2) {
+            graphics.outline(x + 1, thumbY, width - 2, thumbHeight,
+                    StorageTheme.SCROLLBAR_BORDER);
+        }
     }
 
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY, Layout layout) {
