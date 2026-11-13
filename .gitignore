@@ -47,3 +47,5 @@ gradle-app.setting
 # JDT-specific (Eclipse Java Development Tools)
 .classpath
 .vscode/settings.json
+
+/run-1.21.1-fabric/

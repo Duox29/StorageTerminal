@@ -3,7 +3,7 @@ package com.duox.storagemanager.utils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.storage.LevelResource;
-import net.neoforged.fml.loading.FMLPaths;
+import net.fabricmc.loader.api.FabricLoader;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -17,7 +17,7 @@ public class CacheUtils {
 
     public static Path getCacheDbPath(Minecraft mc, String prefix) {
         String safeId = getSafeServerIdentifier(mc);
-        return FMLPaths.CONFIGDIR.get().resolve(prefix + "_" + safeId + ".db");
+        return FabricLoader.getInstance().getConfigDir().resolve(prefix + "_" + safeId + ".db");
     }
 
     public static String getSafeServerIdentifier(Minecraft mc) {

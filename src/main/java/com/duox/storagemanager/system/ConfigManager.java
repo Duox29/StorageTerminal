@@ -4,7 +4,7 @@ import com.duox.storagemanager.system.settings.Setting;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
-import net.neoforged.fml.loading.FMLPaths;
+import net.fabricmc.loader.api.FabricLoader;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -27,7 +27,7 @@ public class ConfigManager {
     private static final ConfigManager INSTANCE = new ConfigManager();
 
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
-    private final Path configPath = FMLPaths.CONFIGDIR.get().resolve("storagemanager.json");
+    private final Path configPath = FabricLoader.getInstance().getConfigDir().resolve("storagemanager.json");
 
     // Debounce config writes; the dirty flag makes rescheduling unnecessary.
     private final ScheduledExecutorService saveExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -125,8 +125,8 @@ public class ConfigManager {
         }
 
         try {
-            if (!Files.exists(FMLPaths.CONFIGDIR.get())) {
-                Files.createDirectories(FMLPaths.CONFIGDIR.get());
+            if (!Files.exists(FabricLoader.getInstance().getConfigDir())) {
+                Files.createDirectories(FabricLoader.getInstance().getConfigDir());
             }
             try (Writer writer = new FileWriter(configPath.toFile())) {
                 gson.toJson(json, writer);

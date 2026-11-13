@@ -9,9 +9,6 @@ import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.bus.api.SubscribeEvent;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -48,9 +45,9 @@ public class ModuleManager {
         return loadedModules;
     }
 
-    @SubscribeEvent
-    public void onClientTick(ClientTickEvent.Post event) {
-        Minecraft mc = Minecraft.getInstance();
+
+    public void onClientTick(Minecraft mc) {
+
         if (mc.player != null) {
             boolean worldChanged = ChestCache.ensureLoaded(mc);
             if (worldChanged) {
@@ -112,7 +109,7 @@ public class ModuleManager {
     }
 
     public void init() {
-        NeoForge.EVENT_BUS.register(this);
+
         // Modules must be registered before loading their config.
         ConfigManager.getInstance().load();
     }

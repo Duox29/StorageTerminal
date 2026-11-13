@@ -6,7 +6,7 @@
   "mixins": [
     "ContainerScreenAccessor",
     "MixinClientPacketListener",
-    "MixinAdvancedOpenScreen",
+
     "MixinContainerScreen",
     "MixinGui",
     "MixinMultiPlayerGameMode",

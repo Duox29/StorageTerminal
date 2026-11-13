@@ -1,94 +1,93 @@
 plugins {
-    id 'java-library'
-    id 'eclipse'
-    id 'idea'
+    id 'fabric-loom' version "${loom_version}"
     id 'maven-publish'
-    // NeoGradle or ModDevGradle
-    id 'net.neoforged.moddev' version '2.0.140'
 }
 
-tasks.named('wrapper', Wrapper).configure {
-    distributionType = Wrapper.DistributionType.BIN
-    gradleVersion = '8.8'
-}
-
-version = mod_version
-group = mod_group_id
-
-repositories {
-    mavenLocal()
-    maven {
-        name = "NeoForged"
-        url = "https://maven.neoforged.net/releases"
-    }
-    mavenCentral()
-    maven {
-        name = "Modrinth"
-        url = "https://api.modrinth.com/maven"
-        content { includeGroup "maven.modrinth" }
-    }
-    flatDir {
-        dirs 'libs'
-    }
-    maven {
-        name = "Mojang"
-        url = "https://libraries.minecraft.net/"
+loom {
+    runs {
+        client { runDir = 'run-1.21.1-fabric' }
     }
 }
+
+version = project.mod_version
+group = project.maven_group
 
 base {
-    archivesName = mod_id
+    archivesName = project.archives_base_name
+}
+
+repositories {
+    maven { url = 'https://api.modrinth.com/maven' }
+    maven { url = 'https://mvn.devos.one/snapshots/' }
+    // Add repositories to retrieve artifacts from in here.
+    // You should only use this when depending on other mods because
+    // Loom adds the essential maven repositories to download Minecraft and libraries from automatically.
+    // See https://docs.gradle.org/current/userguide/declaring_repositories.html
+    // for more information about repositories.
+}
+
+
+dependencies {
+    // To change the versions see the gradle.properties file
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    mappings loom.officialMojangMappings()
+
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "org.xerial:sqlite-jdbc:3.45.3.0"
+    include "org.xerial:sqlite-jdbc:3.45.3.0"
+
+    modRuntimeOnly "maven.modrinth:sophisticated-storage-unofficial-fabric-port:kjNlOByJ"
+    modRuntimeOnly "maven.modrinth:sophisticated-core-unofficial-fabric-port:ZLVrtF0Q"
+    modRuntimeOnly "maven.modrinth:forge-config-api-port:N5qzq0XV"
+    modRuntimeOnly "teamreborn:energy:4.1.0"
+    ["item_abilities", "loot", "level_events", "render_types", "fluids", "core", "model_loader", "lazy_registration", "transfer", "conditions"].each { module ->
+        modRuntimeOnly("io.github.fabricators_of_create.Porting-Lib:${module}:3.1.0-beta.47+1.21.1") { transitive = false }
+    }
+    runtimeOnly "com.electronwill.night-config:toml:3.8.0"
+
+    // Fabric API.
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+}
+
+processResources {
+    inputs.property "version", project.version
+
+    filesMatching("fabric.mod.json") {
+        expand "version": inputs.properties.version
+    }
 }
 
 tasks.withType(JavaCompile).configureEach {
-    options.encoding = 'UTF-8'
-    options.compilerArgs << "-Xlint:deprecation"
+    it.options.release = 21
 }
 
-java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+java {
+    // Loom will automatically attach sourcesJar to a RemapSourcesJar task and to the "build" task
+    // if it is present.
+    // If you remove this line, sources will not be generated.
+    withSourcesJar()
 
-// Automatically replace resources in neoforge.mods.toml
-tasks.named('processResources', ProcessResources).configure {
-    var replaceProperties = [
-            minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
-            neo_version: neo_version, loader_version_range: loader_version_range,
-            mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
-            mod_authors: mod_authors, mod_description: mod_description,
-    ]
-    inputs.properties replaceProperties
-
-    filesMatching(['META-INF/neoforge.mods.toml', 'META-INF/mods.toml']) {
-        expand replaceProperties + [project: project]
-    }
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
-neoForge {
-    version = project.neo_version
-    runs {
-        client {
-            client()
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
-        }
-        server {
-            server()
-            programArgument '--nogui'
-            systemProperty 'neoforge.enabledGameTestNamespaces', project.mod_id
+// configure the maven publication
+publishing {
+    publications {
+        create("mavenJava", MavenPublication) {
+            artifactId = project.archives_base_name
+            from components.java
         }
     }
 
-    mods {
-        "${mod_id}" {
-            sourceSet sourceSets.main
-        }
+    // See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+    repositories {
+    maven { url = 'https://api.modrinth.com/maven' }
+    maven { url = 'https://mvn.devos.one/snapshots/' }
+        // Add repositories to publish to here.
+        // Notice: This block does NOT have the same function as the block in the top level.
+        // The repositories here will be used for publishing your artifact, not for
+        // retrieving dependencies.
     }
-}
-
-dependencies {
-    // implementation "net.neoforged:neoforge:${neo_version}"
-    implementation "org.xerial:sqlite-jdbc:3.45.3.0"
-    jarJar("org.xerial:sqlite-jdbc:3.45.3.0")
-    additionalRuntimeClasspath 'org.xerial:sqlite-jdbc:3.45.1.0'
-    runtimeOnly 'maven.modrinth:sophisticated-core:FilyXPLY'
-    runtimeOnly 'maven.modrinth:sophisticated-storage:ZviRSUKL'
-
 }

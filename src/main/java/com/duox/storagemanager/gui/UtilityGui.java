@@ -97,9 +97,9 @@ public class UtilityGui extends Screen {
         for (int i = 0; i < Math.min(moduleButtons.size(), modules.size()); i++) {
             Module module = modules.get(i);
             Button button = moduleButtons.get(i);
-            button.setMessage(Component.literal(module.getName()));
-            button.setFGColor(module == selectedModule ? StorageTheme.BTN_ACTIVE_TEXT
-                    : (module.isEnabled() ? 0xFF358335 : StorageTheme.BTN_INACTIVE_TEXT));
+
+            button.setMessage(Component.literal(module.getName()).withStyle(style -> style.withColor(module == selectedModule ? StorageTheme.BTN_ACTIVE_TEXT
+                    : (module.isEnabled() ? 0xFF358335 : StorageTheme.BTN_INACTIVE_TEXT))));
         }
     }
 
@@ -158,10 +158,10 @@ public class UtilityGui extends Screen {
         Button button = Button.builder(booleanLabel(setting), b -> {
             setting.toggle();
             ConfigManager.getInstance().save();
-            b.setMessage(booleanLabel(setting));
-            b.setFGColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
+            b.setMessage(booleanLabel(setting).copy().withStyle(style -> style.withColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT)));
+
         }).bounds(x, y, WIDGET_WIDTH, WIDGET_HEIGHT).build();
-        button.setFGColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
+        button.setMessage(booleanLabel(setting).copy().withStyle(style -> style.withColor(setting.getValue() ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT)));
         return button;
     }
 
@@ -248,7 +248,7 @@ public class UtilityGui extends Screen {
                 setMessage(Component.literal("> Press Key <").withStyle(ChatFormatting.YELLOW));
             } else {
                 setMessage(Component.literal("Keybind: "
-                        + module.getKeyMapping().getKey().getDisplayName().getString()));
+                        + module.getKeyMapping().getTranslatedKeyMessage().getString()));
             }
         }
     }

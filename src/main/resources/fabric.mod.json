@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "id": "storagemanager",
+  "version": "${version}",
+  "name": "Storage Terminal",
+  "description": "Client-side storage terminal for nearby chests",
+  "authors": [
+    "Duox29"
+  ],
+  "contact": {
+    "homepage": "https://github.com/Duox29/StorageTerminal",
+    "sources": "https://github.com/Duox29/StorageTerminal"
+  },
+  "license": "All Rights Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "com.duox.storagemanager.StorageManager"
+    ]
+  },
+  "mixins": [
+    "storagemanager.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.16.10",
+    "minecraft": "~1.21.1",
+    "fabric-api": ">=0.116.7+1.21.1"
+  }
+}
+
