@@ -5,10 +5,13 @@ import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
 
 /* Global and in-range chest content caches, keyed by immutable chest position. */
 public class ChestCache {
@@ -17,6 +20,22 @@ public class ChestCache {
 
     private static final Map<BlockPos, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
     private static final Map<BlockPos, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
+    private static final Map<BlockPos, List<CachedSlot>> STORAGE_SLOTS = new HashMap<>();
+    private record CachedSlot(Slot slot, ItemStack stack) {}
+
+    /** Returns null when no slot-level snapshot is available. */
+    public static Boolean hasSpaceFor(BlockPos pos, ItemStack stack) {
+        List<CachedSlot> slots = STORAGE_SLOTS.get(pos);
+        if (slots == null) return null;
+        for (CachedSlot cached : slots) {
+            Slot slot = cached.slot();
+            ItemStack current = cached.stack();
+            if (slot.isActive() && slot.mayPlace(stack)
+                    && (current.isEmpty() || ItemStack.isSameItemSameComponents(current, stack))
+                    && slot.getMaxStackSize(stack) > current.getCount()) return true;
+        }
+        return false;
+    }
     private static long version = 0;
 
     private static String currentLoadedServerId = "";
@@ -56,6 +75,7 @@ public class ChestCache {
 
         GLOBAL_BUFFER.clear();
         ACTIVE_CACHE.clear();
+        STORAGE_SLOTS.clear();
         currentLoadedServerId = CacheUtils.getSafeServerIdentifier(mc);
         currentLoadedDimension = dimensionId;
 
@@ -82,6 +102,7 @@ public class ChestCache {
     public static void clearAll(Minecraft mc) {
         GLOBAL_BUFFER.clear();
         ACTIVE_CACHE.clear();
+        STORAGE_SLOTS.clear();
         markChanged();
 
         CacheDatabase db = CacheDatabase.getInstance(mc);
@@ -93,6 +114,7 @@ public class ChestCache {
         // Snapshot so the caches never alias a map the caller still mutates.
         Map<String, Integer> contents = new HashMap<>(newData);
         BlockPos key = pos.immutable();
+        STORAGE_SLOTS.remove(key);
         GLOBAL_BUFFER.put(key, contents);
 
         BlockPos center = mc.player != null ? mc.player.blockPosition() : key;
@@ -141,8 +163,11 @@ public class ChestCache {
         if (containerSlots <= 0) return;
 
         Map<String, Integer> contents = new HashMap<>();
+        List<CachedSlot> slots = new ArrayList<>(containerSlots);
         for (int i = 0; i < containerSlots; i++) {
-            ItemStack stack = menu.getSlot(i).getItem();
+            Slot slot = menu.getSlot(i);
+            ItemStack stack = slot.getItem();
+            slots.add(new CachedSlot(slot, stack.copy()));
             if (!stack.isEmpty()) {
                 String itemId = ItemSerializer.serialize(stack);
                 contents.merge(itemId, stack.getCount(), (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
@@ -150,6 +175,7 @@ public class ChestCache {
         }
 
         BlockPos key = pos.immutable();
+        STORAGE_SLOTS.put(key, slots);
         GLOBAL_BUFFER.put(key, contents);
 
         if (mc.player != null) {

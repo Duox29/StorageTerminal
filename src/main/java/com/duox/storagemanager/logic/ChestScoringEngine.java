@@ -2,6 +2,8 @@ package com.duox.storagemanager.logic;
 
 import com.duox.storagemanager.utils.ItemSerializer;
 import com.duox.storagemanager.compat.SophisticatedStorageCompat;
+import com.duox.storagemanager.utils.ChestCache;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.level.Level;
@@ -35,7 +37,7 @@ public class ChestScoringEngine {
         this.spaceWeight = spaceWeight;
     }
 
-    public BlockPos findBestChest(String itemId, BlockPos playerPos, double maxRange,
+    public BlockPos findBestChest(ItemStack stack, String itemId, BlockPos playerPos, double maxRange,
                                   Map<BlockPos, Map<String, Integer>> cache,
                                   Set<BlockPos> processedChests,
                                   boolean forceDump) {
@@ -55,6 +57,9 @@ public class ChestScoringEngine {
             if (processedChests.contains(pos)) {
                 continue;
             }
+
+            if (SophisticatedStorageCompat.isStorage(level.getBlockEntity(pos))
+                    && Boolean.FALSE.equals(ChestCache.hasSpaceFor(pos, stack))) continue;
 
             double score = scoreChest(pos, contents, itemId, playerPos, forceDump);
 
