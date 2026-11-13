@@ -3,10 +3,9 @@ package com.duox.storagemanager.mixin;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
-import com.duox.storagemanager.utils.ManualContainerTracker;
+import com.duox.storagemanager.utils.ContainerOpenTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
-import net.minecraft.core.BlockPos;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
@@ -41,21 +40,6 @@ public class MixinClientPacketListener {
     @Inject(method = "handleOpenScreen", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/gui/screens/MenuScreens;create(Lnet/minecraft/world/inventory/MenuType;Lnet/minecraft/client/Minecraft;ILnet/minecraft/network/chat/Component;)V"))
     private void onOpenScreen(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
-        StorageManager storageManager = ModuleManager.INSTANCE.getModule(StorageManager.class);
-        if (storageManager != null && storageManager.isSilentMode()) {
-            storageManager.onSilentContainerOpen(packet.getContainerId(), packet.getType());
-            return;
-        }
-        AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
-        if (autoStash != null && autoStash.isSilentMode()) {
-            autoStash.onSilentContainerOpen(packet.getContainerId(), packet.getType());
-            return;
-        }
-        // Treat the open as manual if a block was clicked.
-        BlockPos last = ManualContainerTracker.getLastInteractedBlock();
-        if (last != null) {
-            ManualContainerTracker.onManualContainerOpen(last, Minecraft.getInstance(),
-                    packet.getContainerId(), packet.getType());
-        }
+        ContainerOpenTracker.onOpen(packet.getContainerId(), packet.getType());
     }
 }

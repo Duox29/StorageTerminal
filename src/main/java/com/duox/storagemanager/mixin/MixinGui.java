@@ -1,5 +1,6 @@
 package com.duox.storagemanager.mixin;
 
+import com.duox.storagemanager.compat.SophisticatedStorageCompat;
 import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.logic.StorageTransferCoordinator;
@@ -19,7 +20,7 @@ public class MixinGui {
 
     @Inject(method = "setScreen", at = @At("HEAD"), cancellable = true)
     private void onSetScreen(Screen screen, CallbackInfo ci) {
-        if (!(screen instanceof AbstractContainerScreen<?>)) {
+        if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) {
             return;
         }
 
@@ -34,7 +35,8 @@ public class MixinGui {
         boolean suppressContainer = (autoStash != null && autoStash.isSilentMode())
                 || (storageManager != null && storageManager.isSilentMode());
 
-        if (suppressContainer && (screen instanceof ContainerScreen || screen instanceof ShulkerBoxScreen)) {
+        if (suppressContainer && (screen instanceof ContainerScreen || screen instanceof ShulkerBoxScreen
+                || SophisticatedStorageCompat.isStorageMenu(containerScreen.getMenu()))) {
             ci.cancel();
         }
     }

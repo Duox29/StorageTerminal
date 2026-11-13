@@ -1,6 +1,7 @@
 package com.duox.storagemanager.logic;
 
 import com.duox.storagemanager.utils.ItemSerializer;
+import com.duox.storagemanager.compat.SophisticatedStorageCompat;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.level.Level;
@@ -74,8 +75,8 @@ public class ChestScoringEngine {
         // Match containers by base id, ignoring item components.
         String baseItemId = ItemSerializer.getBaseId(itemId);
         boolean hasExactMatch = false;
-        int baseItemCount = 0;
-        int occupiedSlots = 0;
+        long baseItemCount = 0;
+        long occupiedSlots = 0;
 
         for (Map.Entry<String, Integer> entry : contents.entrySet()) {
             boolean exactMatch = entry.getKey().equals(itemId);
@@ -86,7 +87,7 @@ public class ChestScoringEngine {
                 baseItemCount += entry.getValue();
             }
             int maxStack = getMaxStackSize(entry.getKey());
-            occupiedSlots += (entry.getValue() + maxStack - 1) / maxStack;
+            occupiedSlots += ((long) entry.getValue() + maxStack - 1) / maxStack;
         }
 
         // Normal stashing only uses chests that already hold this item type.
@@ -94,8 +95,17 @@ public class ChestScoringEngine {
             return -1.0;
         }
 
+        // Aggregated item counts cannot reveal upgraded slot limits or the
+        // actual slot count. Try the storage and let its menu validate space.
+        if (SophisticatedStorageCompat.isStorage(level.getBlockEntity(pos))) {
+            double totalWeight = distanceWeight + concentrationWeight + spaceWeight;
+            if (totalWeight == 0) totalWeight = 1.0;
+            return (distScore * distanceWeight + Math.min(1.0, baseItemCount / 64.0) * concentrationWeight
+                    + spaceWeight) / totalWeight;
+        }
+
         int totalSlots = getChestCapacity(level.getBlockEntity(pos));
-        int availableSlots = Math.max(0, totalSlots - occupiedSlots);
+        long availableSlots = Math.max(0, totalSlots - occupiedSlots);
 
         double itemScore = Math.min(1.0, baseItemCount / 64.0);
 
@@ -112,7 +122,7 @@ public class ChestScoringEngine {
             spaceScore = 0.3; // Room in the last stack.
         } else {
             int totalCapacity = totalSlots * 64;
-            int usedCapacity = contents.values().stream().mapToInt(Integer::intValue).sum();
+            long usedCapacity = contents.values().stream().mapToLong(Integer::longValue).sum();
             spaceScore = Math.max(0, 1.0 - (double) usedCapacity / totalCapacity);
         }
 

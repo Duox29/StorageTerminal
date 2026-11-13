@@ -27,7 +27,7 @@ public class ItemSerializer {
                 if (mc.level == null) return id;
 
                 HolderLookup.Provider provider = mc.level.registryAccess();
-                DataResult<Tag> result = ItemStack.CODEC.encodeStart(provider.createSerializationContext(NbtOps.INSTANCE), stack);
+                DataResult<Tag> result = ItemStack.CODEC.encodeStart(provider.createSerializationContext(NbtOps.INSTANCE), stack.copyWithCount(1));
 
                 if (result.isSuccess()) {
                     Tag tag = result.getOrThrow();

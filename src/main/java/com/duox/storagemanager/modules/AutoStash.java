@@ -1,5 +1,6 @@
 package com.duox.storagemanager.modules;
 
+import com.duox.storagemanager.compat.SophisticatedStorageCompat;
 import com.duox.storagemanager.logic.ChestScoringEngine;
 import com.duox.storagemanager.logic.StashPlanner;
 import com.duox.storagemanager.system.Module;
@@ -8,7 +9,6 @@ import com.duox.storagemanager.system.settings.BooleanSetting;
 import com.duox.storagemanager.system.settings.NumberSetting;
 import com.duox.storagemanager.utils.ChestCache;
 import com.duox.storagemanager.utils.InventoryUtils;
-import com.duox.storagemanager.utils.ItemSerializer;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -359,7 +359,7 @@ public class AutoStash extends Module {
         if (silentContainerId == -1 || menu.containerId != silentContainerId) {
             return State.CLOSING_AFTER_STASH;
         }
-        int containerSlots = menu.slots.size() - PLAYER_INVENTORY_SIZE;
+        int containerSlots = InventoryUtils.storageSlotCount(menu);
 
         if (containerSlots <= 0) return State.CLOSING_AFTER_STASH;
 
@@ -370,7 +370,11 @@ public class AutoStash extends Module {
         Iterator<Integer> it = slotsToMove.iterator();
         while (it.hasNext() && moves < limit) {
             int invSlotIndex = it.next();
-            int menuSlotId = InventoryUtils.mapInventorySlotToMenuSlot(invSlotIndex, containerSlots);
+            int menuSlotId = InventoryUtils.findPlayerMenuSlot(menu, invSlotIndex);
+            if (menuSlotId < 0) {
+                it.remove();
+                continue;
+            }
 
             if (menu.getSlot(menuSlotId).hasItem()) {
                 int before = menu.getSlot(menuSlotId).getItem().getCount();
@@ -381,7 +385,11 @@ public class AutoStash extends Module {
                     setEnabled(false);
                     return State.IDLE;
                 }
-                InventoryUtils.sendClickPacket(menu, menuSlotId, 0, ContainerInput.QUICK_MOVE);
+                if (SophisticatedStorageCompat.isStorage(mc.level.getBlockEntity(currentTarget))) {
+                    depositIntoStorage(menu, menuSlotId, containerSlots);
+                } else {
+                    InventoryUtils.sendClickPacket(menu, menuSlotId, 0, ContainerInput.QUICK_MOVE);
+                }
                 if (targetedInventorySlot != null) {
                     targetedExpectedRemainingCount = menu.getSlot(menuSlotId).getItem().getCount();
                 }
@@ -396,6 +404,32 @@ public class AutoStash extends Module {
         }
 
         return State.STASHING_ITEMS;
+    }
+
+    private void depositIntoStorage(AbstractContainerMenu menu, int sourceSlot, int storageSlots) {
+        if (!menu.getCarried().isEmpty()) return;
+        ItemStack source = menu.getSlot(sourceSlot).getItem().copy();
+        boolean hasSpace = false;
+        for (int i = 0; i < storageSlots; i++) {
+            var slot = menu.getSlot(i);
+            if (slot.isActive() && InventoryUtils.getSlotSpace(slot, source) > 0) {
+                hasSpace = true;
+                break;
+            }
+        }
+        if (!hasSpace) return;
+        InventoryUtils.pickup(menu, sourceSlot);
+        // Prefer existing stacks, then empty slots; never click upgrade slots.
+        for (int pass = 0; pass < 2 && !menu.getCarried().isEmpty(); pass++) {
+            for (int i = 0; i < storageSlots && !menu.getCarried().isEmpty(); i++) {
+                var slot = menu.getSlot(i);
+                if (slot.isActive() && slot.hasItem() == (pass == 0)
+                        && InventoryUtils.getSlotSpace(slot, menu.getCarried()) > 0) {
+                    InventoryUtils.pickup(menu, i);
+                }
+            }
+        }
+        if (!menu.getCarried().isEmpty()) InventoryUtils.pickup(menu, sourceSlot);
     }
 
     private State handleWaitingForUpdate() {

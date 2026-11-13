@@ -69,7 +69,7 @@ public class ItemGridView {
         Map<String, Integer> totals = new HashMap<>();
         for (Map<String, Integer> contents : ChestCache.getActiveCache().values()) {
             for (Map.Entry<String, Integer> entry : contents.entrySet()) {
-                totals.merge(entry.getKey(), entry.getValue(), Integer::sum);
+                totals.merge(entry.getKey(), entry.getValue(), (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
             }
         }
 

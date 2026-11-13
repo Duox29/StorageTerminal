@@ -1,5 +1,6 @@
 package com.duox.storagemanager.utils;
 
+import com.duox.storagemanager.compat.SophisticatedStorageCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -24,7 +25,7 @@ import net.minecraft.world.phys.Vec3;
 
 /* Container and block interaction helpers. */
 public class InventoryUtils {
-    // The player inventory is always the last 36 slots of a container menu.
+    // The main inventory and hotbar contain 36 slots.
     public static final int PLAYER_INVENTORY_SIZE = 36;
 
     private static final Minecraft mc = Minecraft.getInstance();
@@ -39,13 +40,17 @@ public class InventoryUtils {
     public static boolean isStorable(BlockEntity be) {
         return be instanceof ChestBlockEntity
                 || be instanceof BarrelBlockEntity
-                || be instanceof ShulkerBoxBlockEntity;
+                || be instanceof ShulkerBoxBlockEntity
+                || SophisticatedStorageCompat.isStorage(be);
     }
 
     /** Rejects unrelated menus while an automated chest interaction is in flight. */
     public static boolean matchesStorageMenu(BlockPos pos, MenuType<?> menuType) {
         if (mc.level == null || pos == null) return false;
         BlockEntity be = mc.level.getBlockEntity(pos);
+        if (SophisticatedStorageCompat.isStorage(be)) {
+            return SophisticatedStorageCompat.isStorageMenuType(menuType);
+        }
         if (be instanceof ShulkerBoxBlockEntity) return menuType == MenuType.SHULKER_BOX;
         if (be instanceof BarrelBlockEntity) return menuType == MenuType.GENERIC_9x3;
         if (be instanceof ChestBlockEntity) {
@@ -126,19 +131,30 @@ public class InventoryUtils {
         return -1;
     }
 
-    /** Maps the player's 0-35 inventory indices to slots in a chest-like menu. */
-    public static int mapInventorySlotToMenuSlot(int inventorySlot, int containerSlots) {
-        if (inventorySlot < 0 || inventorySlot >= PLAYER_INVENTORY_SIZE) return -1;
-        return inventorySlot < 9 ? containerSlots + 27 + inventorySlot : containerSlots + inventorySlot - 9;
+    /** Storage slots precede the player inventory in supported storage menus. */
+    public static int storageSlotCount(AbstractContainerMenu menu) {
+        if (mc.player == null) return -1;
+        for (int i = 0; i < menu.slots.size(); i++) {
+            if (menu.getSlot(i).container == mc.player.getInventory()) return i;
+        }
+        return -1;
+    }
+
+    public static int findPlayerMenuSlot(AbstractContainerMenu menu, int inventorySlot) {
+        if (mc.player == null || inventorySlot < 0 || inventorySlot >= PLAYER_INVENTORY_SIZE) return -1;
+        for (Slot slot : menu.slots) {
+            if (slot.container == mc.player.getInventory() && slot.getContainerSlot() == inventorySlot) return slot.index;
+        }
+        return -1;
     }
 
     /** How many items of the given stack a slot can still accept. */
     public static int getSlotSpace(Slot slot, ItemStack stack) {
         if (!slot.mayPlace(stack)) return 0;
         ItemStack current = slot.getItem();
-        if (current.isEmpty()) return Math.min(stack.getMaxStackSize(), slot.getMaxStackSize(stack));
+        if (current.isEmpty()) return slot.getMaxStackSize(stack);
         if (!ItemStack.isSameItemSameComponents(current, stack)) return 0;
-        return Math.max(0, Math.min(current.getMaxStackSize(), slot.getMaxStackSize(current)) - current.getCount());
+        return Math.max(0, slot.getMaxStackSize(current) - current.getCount());
     }
 
     public static void closeContainerSilent() {
@@ -174,15 +190,17 @@ public class InventoryUtils {
     /** Returns how many items can fit in the player's inventory. */
     public static int calculatePlayerSpace(AbstractContainerMenu menu, ItemStack stackToFit) {
         int freeSpace = 0;
-        int containerSlotsEnd = menu.slots.size() - PLAYER_INVENTORY_SIZE;
         int maxStack = stackToFit.getMaxStackSize();
 
-        for (int i = containerSlotsEnd; i < menu.slots.size(); i++) {
-            ItemStack slotStack = menu.getSlot(i).getItem();
+        if (mc.player == null) return 0;
+        for (Slot slot : menu.slots) {
+            if (slot.container != mc.player.getInventory() || slot.getContainerSlot() >= PLAYER_INVENTORY_SIZE
+                    || slot.getContainerSlot() < 0 || !slot.isActive() || !slot.mayPlace(stackToFit)) continue;
+            ItemStack slotStack = slot.getItem();
             if (slotStack.isEmpty()) {
-                freeSpace += maxStack;
+                freeSpace += Math.min(maxStack, slot.getMaxStackSize(stackToFit));
             } else if (ItemStack.isSameItemSameComponents(slotStack, stackToFit)) {
-                freeSpace += Math.max(0, maxStack - slotStack.getCount());
+                freeSpace += Math.max(0, Math.min(maxStack, slot.getMaxStackSize(stackToFit)) - slotStack.getCount());
             }
         }
         return freeSpace;

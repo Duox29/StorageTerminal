@@ -136,7 +136,7 @@ public class ChestCache {
     }
 
     public static void updateFromContainerMenu(BlockPos pos, AbstractContainerMenu menu, Minecraft mc) {
-        int containerSlots = menu.slots.size() - InventoryUtils.PLAYER_INVENTORY_SIZE;
+        int containerSlots = InventoryUtils.storageSlotCount(menu);
 
         if (containerSlots <= 0) return;
 
@@ -145,7 +145,7 @@ public class ChestCache {
             ItemStack stack = menu.getSlot(i).getItem();
             if (!stack.isEmpty()) {
                 String itemId = ItemSerializer.serialize(stack);
-                contents.put(itemId, contents.getOrDefault(itemId, 0) + stack.getCount());
+                contents.merge(itemId, stack.getCount(), (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
             }
         }
 

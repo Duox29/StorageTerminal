@@ -28,6 +28,11 @@ repositories {
         url = "https://maven.neoforged.net/releases"
     }
     mavenCentral()
+    maven {
+        name = "Modrinth"
+        url = "https://api.modrinth.com/maven"
+        content { includeGroup "maven.modrinth" }
+    }
     flatDir {
         dirs 'libs'
     }
@@ -120,6 +125,9 @@ publishing {
 
 dependencies {
     jarJar(implementation "org.xerial:sqlite-jdbc:3.45.3.0")
+    // Development runtime only; neither mod is bundled with Storage Terminal.
+    runtimeOnly "maven.modrinth:sophisticated-core:wGa0E4M4"
+    runtimeOnly "maven.modrinth:sophisticated-storage:L0LDHdw0"
 }
 
 idea {

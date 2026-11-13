@@ -1,5 +1,6 @@
 package com.duox.storagemanager.modules;
 
+import com.duox.storagemanager.compat.SophisticatedStorageCompat;
 import com.duox.storagemanager.gui.StorageScreen;
 import com.duox.storagemanager.logic.StorageTransferCoordinator;
 import com.duox.storagemanager.system.ModuleManager;
@@ -176,7 +177,8 @@ public class StorageManager extends Module {
     }
 
     public void addToRequestQueue(String itemId, int quantity) {
-        requestQueue.put(itemId, requestQueue.getOrDefault(itemId, 0) + quantity);
+        long total = (long) requestQueue.getOrDefault(itemId, 0) + quantity;
+        requestQueue.put(itemId, (int) Math.max(0, Math.min(Integer.MAX_VALUE, total)));
     }
 
     public void clearRequestQueue() {
@@ -211,7 +213,7 @@ public class StorageManager extends Module {
     }
 
     public void adjustQueued(String itemId, int delta, int max) {
-        int target = Math.max(0, Math.min(max, getQueued(itemId) + delta));
+        int target = (int) Math.max(0L, Math.min((long) max, (long) getQueued(itemId) + delta));
         if (target == 0) {
             requestQueue.remove(itemId);
         } else {
@@ -556,7 +558,7 @@ public class StorageManager extends Module {
             currentState = State.CLOSING_CHEST;
             return;
         }
-        int containerSlots = menu.slots.size() - InventoryUtils.PLAYER_INVENTORY_SIZE;
+        int containerSlots = InventoryUtils.storageSlotCount(menu);
 
         if (containerSlots <= 0) {
             currentState = State.CLOSING_CHEST;
@@ -600,9 +602,11 @@ public class StorageManager extends Module {
 
         if (targetedInventorySlot >= 0) {
             actualTaken = transferToTargetSlot(menu, slotIndex, stack, needed, containerSlots);
-        } else if (inSlot <= needed) {
+        } else if (inSlot <= needed
+                && !SophisticatedStorageCompat.isStorage(mc.level.getBlockEntity(currentTargetEntry.getKey()))) {
             actualTaken = transferFullStack(menu, slotIndex, stack);
         } else {
+            // Sophisticated Storage quick-move may target an open upgrade tab.
             actualTaken = transferPartialStack(menu, slotIndex, needed);
         }
 
@@ -617,12 +621,12 @@ public class StorageManager extends Module {
 
     private int transferToTargetSlot(AbstractContainerMenu menu, int chestSlot, ItemStack stack,
                                      int needed, int containerSlots) {
-        int playerSlot = InventoryUtils.mapInventorySlotToMenuSlot(targetedInventorySlot, containerSlots);
+        int playerSlot = InventoryUtils.findPlayerMenuSlot(menu, targetedInventorySlot);
         if (playerSlot < containerSlots || playerSlot >= menu.slots.size()
                 || !menu.getCarried().isEmpty()
                 || !ItemStack.isSameItemSameComponents(stack, targetedExpectedStack)) return 0;
 
-        int move = Math.min(Math.min(needed, stack.getCount()),
+        int move = Math.min(Math.min(Math.min(needed, stack.getCount()), stack.getMaxStackSize()),
                 InventoryUtils.getSlotSpace(menu.getSlot(playerSlot), stack));
         return move > 0 ? moveItemsToSlot(menu, chestSlot, playerSlot, move) : 0;
     }
@@ -631,7 +635,9 @@ public class StorageManager extends Module {
         ItemStack source = menu.getSlot(sourceSlot).getItem().copy();
         int before = menu.getSlot(targetSlot).getItem().getCount();
         InventoryUtils.pickup(menu, sourceSlot);
-        if (move == source.getCount() && menu.getSlot(targetSlot).getItem().isEmpty()) {
+        int held = menu.getCarried().getCount();
+        move = Math.min(move, held);
+        if (move == held && move > 0) {
             InventoryUtils.pickup(menu, targetSlot);
         } else {
             for (int i = 0; i < move; i++) InventoryUtils.dropOne(menu, targetSlot);
@@ -645,18 +651,29 @@ public class StorageManager extends Module {
 
     private int transferFullStack(AbstractContainerMenu menu, int slotIndex, ItemStack stack) {
         int space = InventoryUtils.calculatePlayerSpace(menu, stack);
-        int toMove = Math.min(stack.getCount(), space);
+        int toMove = Math.min(Math.min(stack.getCount(), space), stack.getMaxStackSize());
 
         if (toMove > 0) {
+            int before = stack.getCount();
             InventoryUtils.quickMove(menu, slotIndex);
-            return toMove;
+            return Math.max(0, before - menu.getSlot(slotIndex).getItem().getCount());
         }
         return 0;
     }
 
     private int transferPartialStack(AbstractContainerMenu menu, int slotIndex, int needed) {
-        int targetSlot = InventoryUtils.findEmptyPlayerSlot(menu, menu.getSlot(slotIndex).getItem());
-        return targetSlot != -1 ? moveItemsToSlot(menu, slotIndex, targetSlot, needed) : 0;
+        ItemStack stack = menu.getSlot(slotIndex).getItem();
+        for (int i = 0; i < InventoryUtils.PLAYER_INVENTORY_SIZE; i++) {
+            int targetSlot = InventoryUtils.findPlayerMenuSlot(menu, (i + 9) % InventoryUtils.PLAYER_INVENTORY_SIZE);
+            if (targetSlot < 0) continue;
+            var slot = menu.getSlot(targetSlot);
+            int space = InventoryUtils.getSlotSpace(slot, stack);
+            if (slot.isActive() && space > 0) {
+                return moveItemsToSlot(menu, slotIndex, targetSlot,
+                        Math.min(Math.min(needed, stack.getMaxStackSize()), space));
+            }
+        }
+        return 0;
     }
 
     private void updateCache(String itemId, int amountTaken) {

@@ -57,7 +57,7 @@ public class ManualContainerTracker {
 
         // Normalize a double chest to its right half.
         BlockPos actualPos = containerPos;
-        if (be instanceof ChestBlockEntity) {
+        if (be instanceof ChestBlockEntity || be.getBlockState().hasProperty(ChestBlock.TYPE)) {
             BlockState state = be.getBlockState();
             if (InventoryUtils.isDoubleChestLeftHalf(state)) {
                 Direction facing = state.getValue(ChestBlock.FACING);
