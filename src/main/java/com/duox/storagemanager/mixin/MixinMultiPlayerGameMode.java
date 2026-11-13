@@ -1,6 +1,7 @@
 package com.duox.storagemanager.mixin;
 
-import com.duox.storagemanager.modules.AutoStash;
+import com.duox.storagemanager.utils.ManualContainerTracker;
+import com.duox.storagemanager.utils.InventoryUtils;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
@@ -16,8 +17,9 @@ public class MixinMultiPlayerGameMode {
 
     @Inject(method = "useItemOn", at = @At("HEAD"))
     private void onUseItemOn(LocalPlayer player, InteractionHand hand, BlockHitResult hitResult, CallbackInfoReturnable<InteractionResult> cir) {
-        // Lưu vị trí block mà người chơi đang click vào
-        // Điều này sẽ được sử dụng để xác định xem container được mở có phải do manual click không
-        AutoStash.setLastInteractedBlock(hitResult.getBlockPos());
+        // Remember the clicked block to detect manual container opens.
+        if (!InventoryUtils.isSilentBlockInteraction()) {
+            ManualContainerTracker.setLastInteractedBlock(hitResult.getBlockPos());
+        }
     }
 }

@@ -1,104 +1,142 @@
 package com.duox.storagemanager.utils;
 
-import com.duox.storagemanager.utils.CacheDatabase;
-import com.duox.storagemanager.utils.CacheUtils;
+import com.duox.storagemanager.modules.StorageManager;
+import com.duox.storagemanager.system.ModuleManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.core.registries.BuiltInRegistries;
 
-import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.HashMap;
+import java.util.Map;
 
+/* Global and in-range chest content caches, keyed by immutable chest position. */
 public class ChestCache {
-    private static final Map<String, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
-    private static final Map<String, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
-    public static final AtomicBoolean DIRTY_FLAG = new AtomicBoolean(false);
+    /* Active-cache refresh radius used when no module setting is available yet. */
+    private static final double DEFAULT_ACTIVE_RANGE = 16.0;
 
-    public static Map<String, Map<String, Integer>> getGlobalBuffer() {
+    private static final Map<BlockPos, Map<String, Integer>> GLOBAL_BUFFER = new HashMap<>();
+    private static final Map<BlockPos, Map<String, Integer>> ACTIVE_CACHE = new HashMap<>();
+    private static long version = 0;
+
+    private static String currentLoadedServerId = "";
+    private static String currentLoadedDimension = "";
+
+    public static Map<BlockPos, Map<String, Integer>> getGlobalBuffer() {
         return GLOBAL_BUFFER;
     }
 
-    public static Map<String, Map<String, Integer>> getActiveCache() {
+    public static Map<BlockPos, Map<String, Integer>> getActiveCache() {
         return ACTIVE_CACHE;
     }
 
-    public static boolean isCacheEmpty() {
-        return GLOBAL_BUFFER.isEmpty();
+    public static long getVersion() {
+        return version;
     }
-    public static String currentLoadedDimension = "";
-    public static void loadFromDatabase(Minecraft mc, String dimensionId) {
+
+    private static void markChanged() {
+        version++;
+    }
+
+    /* Rebuilds the in-memory cache when the world or dimension changes. */
+    public static boolean ensureLoaded(Minecraft mc) {
+        if (isLoadedFor(mc)) return false;
+        loadFromDatabase(mc, CacheUtils.getDimensionId(mc));
+        return true;
+    }
+
+    private static boolean isLoadedFor(Minecraft mc) {
+        return currentLoadedServerId.equals(CacheUtils.getSafeServerIdentifier(mc))
+                && currentLoadedDimension.equals(CacheUtils.getDimensionId(mc));
+    }
+
+    private static void loadFromDatabase(Minecraft mc, String dimensionId) {
         CacheDatabase db = CacheDatabase.getInstance(mc);
         Map<String, Map<String, Integer>> loaded = db.loadByDimension(dimensionId);
 
         GLOBAL_BUFFER.clear();
         ACTIVE_CACHE.clear();
-        currentLoadedDimension = dimensionId; // <--- THÊM DÒNG NÀY
+        currentLoadedServerId = CacheUtils.getSafeServerIdentifier(mc);
+        currentLoadedDimension = dimensionId;
 
-        if (loaded != null && !loaded.isEmpty()) {
-            GLOBAL_BUFFER.putAll(loaded);
+        if (loaded != null) {
+            // Rows are keyed by text in SQLite; parse each position once here.
+            loaded.forEach((posStr, contents) -> {
+                BlockPos pos = parsePosition(posStr);
+                if (pos != null) GLOBAL_BUFFER.put(pos, contents);
+            });
         }
 
         if (mc.player != null) {
-            refreshActiveCache(mc.player.blockPosition(), 64.0);
+            refreshActiveCache(mc.player.blockPosition(), scanRangeFromModule());
         }
 
-        DIRTY_FLAG.set(true);
+        markChanged();
+    }
+
+    /* Ignores rows written by an older or corrupted build rather than failing the load. */
+    private static BlockPos parsePosition(String posStr) {
+        return CacheUtils.tryStringToPos(posStr);
     }
 
     public static void clearAll(Minecraft mc) {
         GLOBAL_BUFFER.clear();
         ACTIVE_CACHE.clear();
-        DIRTY_FLAG.set(true);
+        markChanged();
 
         CacheDatabase db = CacheDatabase.getInstance(mc);
         db.clearServer();
-
-        java.nio.file.Path cacheFile = com.duox.storagemanager.utils.CacheUtils.getCacheFilePath(mc, "autostash");
-        try {
-            java.nio.file.Files.deleteIfExists(cacheFile);
-        } catch (java.io.IOException e) {
-            e.printStackTrace();
-        }
     }
 
-    public static void updateAndSync(BlockPos pos, Map<String, Integer> newData, Minecraft mc) {
-        String key = CacheUtils.posToString(pos);
-        GLOBAL_BUFFER.put(key, newData);
+    public static void updateAndSync(BlockPos pos, Map<String, Integer> newData) {
+        Minecraft mc = Minecraft.getInstance();
+        // Snapshot so the caches never alias a map the caller still mutates.
+        Map<String, Integer> contents = new HashMap<>(newData);
+        BlockPos key = pos.immutable();
+        GLOBAL_BUFFER.put(key, contents);
 
-        // Lấy Dimension ID hiện tại của người chơi
-        String dimensionId = CacheUtils.getDimensionId(mc);
-
-        CacheDatabase db = CacheDatabase.getInstance(mc);
-        // FIX: Truyền dimensionId vào tham số đầu tiên theo đúng cấu trúc mới
-        db.upsertChest(dimensionId, key, newData);
-
-        // Logic làm mới cache hoạt động trong phạm vi 64 block
-        BlockPos center = mc.player != null ? mc.player.blockPosition() : pos;
-        refreshActiveCache(center, 64.0);
-        DIRTY_FLAG.set(true);
+        BlockPos center = mc.player != null ? mc.player.blockPosition() : key;
+        refreshActiveCache(center, scanRangeFromModule());
+        persist(mc, key, contents);
     }
+
+    /* Stores the chest in the database and bumps the version. */
+    private static void persist(Minecraft mc, BlockPos pos, Map<String, Integer> contents) {
+        CacheDatabase.getInstance(mc).upsertChest(CacheUtils.getDimensionId(mc),
+                CacheUtils.posToString(pos), contents);
+        markChanged();
+    }
+
     public static void refreshActiveCache(BlockPos center, double range) {
         double rangeSq = range * range;
-        Map<String, Map<String, Integer>> newActive = new HashMap<>();
+        Map<BlockPos, Map<String, Integer>> newActive = new HashMap<>();
 
-        GLOBAL_BUFFER.forEach((posStr, contents) -> {
-            BlockPos chestPos = CacheUtils.stringToPos(posStr);
+        GLOBAL_BUFFER.forEach((chestPos, contents) -> {
             if (chestPos.distSqr(center) <= rangeSq) {
-                newActive.put(posStr, contents);
+                newActive.put(chestPos, contents);
             }
         });
 
         if (!newActive.equals(ACTIVE_CACHE)) {
             ACTIVE_CACHE.clear();
             ACTIVE_CACHE.putAll(newActive);
-            DIRTY_FLAG.set(true);
+            markChanged();
         }
     }
 
+    /* Rebuilds the active cache around the player with the configured scan range. */
+    public static void refreshActiveCache(Minecraft mc) {
+        if (mc.player == null) return;
+        refreshActiveCache(mc.player.blockPosition(), scanRangeFromModule());
+    }
+
+    private static double scanRangeFromModule() {
+        StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
+        return sm != null ? sm.scanRange.getValue() : DEFAULT_ACTIVE_RANGE;
+    }
+
     public static void updateFromContainerMenu(BlockPos pos, AbstractContainerMenu menu, Minecraft mc) {
-        int containerSlots = menu.slots.size() - 36; // Player inventory is always last 36 slots
+        int containerSlots = InventoryUtils.storageSlotCount(menu);
 
         if (containerSlots <= 0) return;
 
@@ -107,41 +145,20 @@ public class ChestCache {
             ItemStack stack = menu.getSlot(i).getItem();
             if (!stack.isEmpty()) {
                 String itemId = ItemSerializer.serialize(stack);
-                contents.put(itemId, contents.getOrDefault(itemId, 0) + stack.getCount());
+                contents.merge(itemId, stack.getCount(), (a, b) -> (int) Math.min(Integer.MAX_VALUE, (long) a + b));
             }
         }
 
-        String posKey = CacheUtils.posToString(pos);
-        GLOBAL_BUFFER.put(posKey, contents);
+        BlockPos key = pos.immutable();
+        GLOBAL_BUFFER.put(key, contents);
 
-        // Update active cache if in range
         if (mc.player != null) {
-            double scanRange = 16.0; // Default
-            com.duox.storagemanager.modules.StorageManager sm =
-                    com.duox.storagemanager.system.ModuleManager.INSTANCE.getModule(
-                            com.duox.storagemanager.modules.StorageManager.class);
-            if (sm != null) {
-                scanRange = sm.scanRange.getValue();
-            }
-
-            if (pos.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
-                ACTIVE_CACHE.put(posKey, contents);
+            double scanRange = scanRangeFromModule();
+            if (key.distSqr(mc.player.blockPosition()) <= scanRange * scanRange) {
+                ACTIVE_CACHE.put(key, contents);
             }
         }
 
-        String dimensionId = CacheUtils.getDimensionId(mc);
-        // Cập nhật vào DB với Dimension ID
-        CacheDatabase db = CacheDatabase.getInstance(mc);
-        db.upsertChest(dimensionId, posKey, contents);
-
-        DIRTY_FLAG.set(true);
-    }
-
-    public static void markDirty() {
-        DIRTY_FLAG.set(true);
-    }
-
-    public static void clearDirty() {
-        DIRTY_FLAG.set(false);
+        persist(mc, key, contents);
     }
 }

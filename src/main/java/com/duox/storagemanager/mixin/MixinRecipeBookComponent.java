@@ -1,8 +1,9 @@
 package com.duox.storagemanager.mixin;
 
-import com.duox.storagemanager.modules.AutoStash;
 import com.duox.storagemanager.modules.StorageManager;
 import com.duox.storagemanager.system.ModuleManager;
+import com.duox.storagemanager.utils.ChestCache;
+import com.duox.storagemanager.utils.ToastUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.recipebook.RecipeBookComponent;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
@@ -11,239 +12,148 @@ import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Redirect;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
+/* Requests missing recipe ingredients from storage. */
 @Mixin(RecipeBookComponent.class)
 public class MixinRecipeBookComponent {
+    private static final Logger LOGGER = LogManager.getLogger();
 
     @Shadow
     protected Minecraft minecraft;
 
-    @Redirect(
-            method = "mouseClicked",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;handlePlaceRecipe(ILnet/minecraft/world/item/crafting/RecipeHolder;Z)V"
-            )
-    )
-    private void redirectHandlePlaceRecipe(
-            MultiPlayerGameMode instance,
-            int containerId,
-            RecipeHolder<?> recipeHolder,
-            boolean placeAll
-    ) {
+    @Redirect(method = "mouseClicked", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;handlePlaceRecipe(ILnet/minecraft/world/item/crafting/RecipeHolder;Z)V"))
+    private void onTryPlaceRecipe(MultiPlayerGameMode gameMode, int containerId, RecipeHolder<?> recipe, boolean placeAll) {
         try {
             StorageManager sm = ModuleManager.INSTANCE.getModule(StorageManager.class);
-
-            if (sm == null || !sm.isEnabled() || !sm.autoRequestRecipe.getValue()) {
-                instance.handlePlaceRecipe(containerId, recipeHolder, placeAll);
-                return;
-            }
-
-            if (minecraft.player == null) {
-                instance.handlePlaceRecipe(containerId, recipeHolder, placeAll);
-                return;
-            }
-
-            boolean startedRetrieval = requestIngredientsFromRecipe(recipeHolder, sm, placeAll);
-            if (!startedRetrieval) {
-                instance.handlePlaceRecipe(containerId, recipeHolder, placeAll);
-            }
-
+            if (sm != null && sm.isEnabled() && sm.autoRequestRecipe.getValue()
+                    && minecraft.player != null && minecraft.level != null
+                    && requestIngredientsFromRecipe(recipe, sm, placeAll)) return;
         } catch (Exception e) {
-            e.printStackTrace();
-            instance.handlePlaceRecipe(containerId, recipeHolder, placeAll);
+            LOGGER.error("Failed to request recipe ingredients", e);
         }
+        gameMode.handlePlaceRecipe(containerId, recipe, placeAll);
     }
 
-    private boolean requestIngredientsFromRecipe(
-            RecipeHolder<?> recipeHolder,
-            StorageManager sm,
-            boolean placeAll
-    ) {
+    private boolean requestIngredientsFromRecipe(RecipeHolder<?> recipe, StorageManager sm, boolean placeAll) {
+        // Build the ingredient cost for one craft.
         Map<String, Integer> baseCost = new HashMap<>();
-        for (Ingredient ingredient : recipeHolder.value().getIngredients()) {
-            if (ingredient == null || ingredient.isEmpty()) {
-                continue;
-            }
-
-            ItemStack[] possibleItems = ingredient.getItems();
-            if (possibleItems.length == 0) {
-                continue;
-            }
+        for (List<ItemStack> possibleItems : ingredientOptions(recipe)) {
+            if (possibleItems.isEmpty()) continue;
 
             String bestItemId = null;
             int maxAvailable = -1;
 
+            // Prefer the variant with the most cached items.
             for (ItemStack stack : possibleItems) {
-                if (stack.isEmpty()) {
-                    continue;
-                }
-
+                if (stack.isEmpty()) continue;
                 String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
                 int available = getTotalInCache(itemId);
-
                 if (available > maxAvailable) {
                     maxAvailable = available;
                     bestItemId = itemId;
                 }
             }
 
+            // Fall back to the first valid variant.
             if (bestItemId == null || maxAvailable <= 0) {
-                bestItemId = BuiltInRegistries.ITEM.getKey(possibleItems[0].getItem()).toString();
+                bestItemId = BuiltInRegistries.ITEM.getKey(possibleItems.get(0).getItem()).toString();
             }
 
-            baseCost.put(bestItemId, baseCost.getOrDefault(bestItemId, 0) + 1);
+            baseCost.merge(bestItemId, 1, Integer::sum);
         }
 
-        if (baseCost.isEmpty()) {
-            return false;
-        }
+        if (baseCost.isEmpty()) return false;
 
+        // Count matching items in the player's inventory.
         Map<String, Integer> playerInv = new HashMap<>();
         Inventory inventory = minecraft.player.getInventory();
-
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             ItemStack stack = inventory.getItem(i);
-            if (stack.isEmpty()) {
-                continue;
-            }
+            if (stack.isEmpty()) continue;
 
             String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-
             if (baseCost.containsKey(itemId)) {
                 playerInv.put(itemId, playerInv.getOrDefault(itemId, 0) + stack.getCount());
             }
         }
 
-        int craftCount;
+        int craftCount = placeAll ? maxCraftCount(baseCost, playerInv) : 1;
 
-        if (!placeAll) {
-            craftCount = 1;
-        } else {
-            craftCount = Integer.MAX_VALUE;
-
-            for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
-                String reqId = entry.getKey();
-                int costPerCraft = entry.getValue();
-
-                int inCache = getTotalInCache(reqId);
-                int inPlayer = playerInv.getOrDefault(reqId, 0);
-
-                int maxByAvailability = (inCache + inPlayer) / costPerCraft;
-                int maxByStack = 64 / costPerCraft;
-
-                craftCount = Math.min(craftCount, Math.min(maxByAvailability, maxByStack));
+        if (craftCount <= 0) {
+            // Not enough items for even one craft; show the missing ingredients.
+            StringBuilder warning = new StringBuilder();
+            boolean first = true;
+            for (Map.Entry<String, Integer> cost : baseCost.entrySet()) {
+                int available = getTotalInCache(cost.getKey()) + playerInv.getOrDefault(cost.getKey(), 0);
+                if (available >= cost.getValue()) continue;
+                if (!first) warning.append(", ");
+                warning.append(cost.getValue() - available).append("x ")
+                        .append(cost.getKey().replace("minecraft:", ""));
+                first = false;
             }
-        }
-
-        Map<String, Integer> missingItems = new HashMap<>();
-        boolean canCraft = true;
-
-        if (craftCount == 0) {
-            canCraft = false;
-
-            for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
-                String reqId = entry.getKey();
-                int costPerCraft = entry.getValue();
-
-                int available = getTotalInCache(reqId) + playerInv.getOrDefault(reqId, 0);
-
-                if (available < costPerCraft) {
-                    missingItems.put(reqId, costPerCraft - available);
-                }
-            }
-        } else {
-            for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
-                String reqId = entry.getKey();
-                int costPerCraft = entry.getValue();
-
-                int totalNeeded = craftCount * costPerCraft;
-                int available = getTotalInCache(reqId) + playerInv.getOrDefault(reqId, 0);
-
-                if (available < totalNeeded) {
-                    canCraft = false;
-                    missingItems.put(reqId, totalNeeded - available);
-                }
-            }
-        }
-
-        if (!canCraft) {
-            showMissingToast(missingItems);
+            ToastUtils.sendToast("§cMissing Ingredients", warning.toString());
             return false;
         }
+
+        // Queue only the missing amount per ingredient.
         boolean addedAny = false;
-
-        for (Map.Entry<String, Integer> entry : baseCost.entrySet()) {
-            String reqId = entry.getKey();
-            int costPerCraft = entry.getValue();
-
-            int totalNeeded = craftCount * costPerCraft;
-            int inPlayer = playerInv.getOrDefault(reqId, 0);
-
-            int toPull = totalNeeded - inPlayer;
-
+        for (Map.Entry<String, Integer> cost : baseCost.entrySet()) {
+            int needed = craftCount * cost.getValue();
+            int inPlayer = playerInv.getOrDefault(cost.getKey(), 0);
+            int toPull = needed - inPlayer;
             if (toPull > 0) {
-                sm.addToRequestQueue(reqId, toPull);
+                sm.addToRequestQueue(cost.getKey(), toPull);
                 addedAny = true;
             }
         }
 
         if (addedAny) {
-            sm.setPendingRecipe(recipeHolder.id(), placeAll);
-            sm.startRetrieval();
-
-            return true;
+            // Place the recipe after retrieval finishes.
+            sm.startRetrieval(recipe, placeAll);
         }
-        return false;
+        return addedAny;
     }
 
-    private void showMissingToast(Map<String, Integer> missingItems) {
-        if (missingItems.isEmpty()) {
-            return;
+    /** Largest craft count the cache plus inventory can afford. */
+    private int maxCraftCount(Map<String, Integer> costPerCraft, Map<String, Integer> playerInv) {
+        int max = Integer.MAX_VALUE;
+        for (Map.Entry<String, Integer> cost : costPerCraft.entrySet()) {
+            int available = getTotalInCache(cost.getKey()) + playerInv.getOrDefault(cost.getKey(), 0);
+            // Vanilla caps each ingredient slot at one stack.
+            max = Math.min(max, Math.min(available / cost.getValue(), 64 / cost.getValue()));
         }
-
-        StringBuilder warning = new StringBuilder();
-        boolean first = true;
-
-        for (Map.Entry<String, Integer> missing : missingItems.entrySet()) {
-            if (!first) {
-                warning.append(", ");
-            }
-
-            String cleanName = missing.getKey().replace("minecraft:", "");
-            warning.append(missing.getValue()).append("x ").append(cleanName);
-
-            first = false;
-        }
-
-        com.duox.storagemanager.utils.ToastUtils.sendToast(
-                "§cMissing Ingredients",
-                warning.toString()
-        );
+        return max;
     }
 
+    /** Returns possible stacks for each ingredient slot. */
+    private List<List<ItemStack>> ingredientOptions(RecipeHolder<?> recipe) {
+        List<List<ItemStack>> options = new ArrayList<>();
+        for (Ingredient ingredient : recipe.value().getIngredients()) {
+            if (!ingredient.isEmpty()) options.add(List.of(ingredient.getItems()));
+        }
+        return options;
+    }
+
+    /** Returns the total cached amount of an item. */
     private int getTotalInCache(String itemId) {
-        Map<String, Map<String, Integer>> cache = AutoStash.getChestCache();
-
-        if (cache == null) {
-            return 0;
-        }
-
         int total = 0;
-
-        for (Map<String, Integer> chestContents : cache.values()) {
-            if (chestContents != null && chestContents.containsKey(itemId)) {
-                total += chestContents.get(itemId);
+        for (Map<String, Integer> chestContents : ChestCache.getActiveCache().values()) {
+            if (chestContents != null) {
+                total += chestContents.getOrDefault(itemId, 0);
             }
         }
-
         return total;
     }
 }
