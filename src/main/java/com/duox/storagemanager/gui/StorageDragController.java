@@ -200,7 +200,7 @@ public final class StorageDragController {
             Slot destination = hovered == null ? null : destinationSlot(screen, mouseX, mouseY);
             Slot target = destination == null ? hovered : destination;
             if (target != null) {
-                graphics.outline(screen.getLeftPos() + target.x - 1, screen.getTopPos() + target.y - 1,
+                graphics.outline(((com.duox.storagemanager.mixin.ContainerScreenAccessor) screen).storageManager$getLeftPos() + target.x - 1, ((com.duox.storagemanager.mixin.ContainerScreenAccessor) screen).storageManager$getTopPos() + target.y - 1,
                         18, 18, destination != null && InventoryUtils.getSlotSpace(destination, panelItem.stack()) > 0
                                 ? VALID_HIGHLIGHT : INVALID_HIGHLIGHT);
             }
@@ -223,8 +223,8 @@ public final class StorageDragController {
     }
 
     private Slot slotAt(AbstractContainerScreen<?> screen, double x, double y) {
-        double localX = x - screen.getLeftPos();
-        double localY = y - screen.getTopPos();
+        double localX = x - ((com.duox.storagemanager.mixin.ContainerScreenAccessor) screen).storageManager$getLeftPos();
+        double localY = y - ((com.duox.storagemanager.mixin.ContainerScreenAccessor) screen).storageManager$getTopPos();
         for (Slot slot : screen.getMenu().slots) {
             if (slot.isActive() && localX >= slot.x - 1 && localX < slot.x + 17
                     && localY >= slot.y - 1 && localY < slot.y + 17) return slot;

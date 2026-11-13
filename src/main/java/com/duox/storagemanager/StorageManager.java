@@ -7,17 +7,13 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
-import net.neoforged.neoforge.client.event.InputEvent;
-import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.bus.api.SubscribeEvent;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
+import net.fabricmc.api.ClientModInitializer;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 
 /* Main mod entry point. */
-@Mod("storagemanager")
-public class StorageManager {
+
+public class StorageManager implements ClientModInitializer {
 
     public static final KeyMapping.Category KEY_CATEGORY = KeyMapping.Category.register(Identifier.parse("storage_manager"));
 
@@ -27,27 +23,16 @@ public class StorageManager {
             KEY_CATEGORY
     );
 
-    public StorageManager(IEventBus modEventBus) {
-        modEventBus.addListener(this::clientSetup);
-        modEventBus.addListener(this::registerKeys);
-        NeoForge.EVENT_BUS.register(this);
-    }
-
-    private void clientSetup(final FMLClientSetupEvent event) {
+    @Override
+    public void onInitializeClient() {
         ModuleManager.INSTANCE.init();
-    }
-
-    public void registerKeys(RegisterKeyMappingsEvent event) {
-        event.register(OPEN_GUI_KEY);
+        KeyMappingHelper.registerKeyMapping(OPEN_GUI_KEY);
         for (Module module : ModuleManager.INSTANCE.getModules()) {
-            event.register(module.getKeyMapping());
+            KeyMappingHelper.registerKeyMapping(module.getKeyMapping());
         }
-    }
-
-    @SubscribeEvent
-    public void onKeyInput(InputEvent.Key event) {
-        if (OPEN_GUI_KEY.consumeClick()) {
-            Minecraft.getInstance().gui.setScreen(new UtilityGui());
-        }
+        ClientTickEvents.END_CLIENT_TICK.register(ModuleManager.INSTANCE::onClientTick);
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            while (OPEN_GUI_KEY.consumeClick()) client.gui.setScreen(new UtilityGui());
+        });
     }
 }

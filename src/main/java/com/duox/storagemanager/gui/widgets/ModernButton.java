@@ -38,8 +38,8 @@ public class ModernButton extends Button {
     @Override
     protected void extractContents(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         if (isActiveSupplier != null) {
-            this.setLabelTextColor(isActiveSupplier.getAsBoolean()
-                    ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT);
+            this.setMessage(getMessage().copy().withColor(isActiveSupplier.getAsBoolean()
+                    ? StorageTheme.BTN_ACTIVE_TEXT : StorageTheme.BTN_INACTIVE_TEXT));
         }
         this.extractDefaultSprite(graphics);
         if (icon == null) {

@@ -5,8 +5,8 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "MixinClientPacketListener",
-    "MixinAdvancedOpenScreen",
     "MixinContainerScreen",
+    "ContainerScreenAccessor",
     "MixinGui",
     "MixinMultiPlayerGameMode",
     "MixinPlayer",
