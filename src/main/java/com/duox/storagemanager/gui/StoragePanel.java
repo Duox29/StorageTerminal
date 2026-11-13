@@ -33,12 +33,12 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
 
     private static final int HEADER_HEIGHT = 20;
     private static final int BUTTON_HEIGHT = 20;
-    private static final int TOP_BTN_WIDTH = 37;
+    private static final int TOP_BTN_WIDTH = 20;
     private static final int TOP_BTN_SPACING = 1;
     private static final int TOP_ROW_SPACING = 2;
     private static final int BOTTOM_PADDING = 10;
     private static final int BOTTOM_BTN_SPACING = 4;
-    private static final int CATEGORY_WIDTH = 44;
+    private static final int CATEGORY_WIDTH = 24;
     private static final int CATEGORY_SPACING = 2;
     private static final int CATEGORY_GAP = 4;
 
@@ -104,7 +104,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
                 Component.literal("Recipe"), b -> {
                     storageManager.autoRequestRecipe.setValue(!storageManager.autoRequestRecipe.getValue());
                     StorageUi.playClick();
-                }).setActiveSupplier(() -> storageManager.autoRequestRecipe.getValue());
+                }).setIcon("recipe").setActiveSupplier(() -> storageManager.autoRequestRecipe.getValue());
 
         topButtons.clear();
         topButtons.add(clearCacheButton);
@@ -208,7 +208,7 @@ public class StoragePanel implements Renderable, GuiEventListener, NarratableEnt
     }
 
     private ItemGridView.Layout layout() {
-        return metrics.layoutAt(x, y, 13, 6);
+        return metrics.layoutAt(x, y, 9, 6);
     }
 
     public void setDragController(StorageDragController controller) {

@@ -42,7 +42,7 @@ public final class StorageUi {
                 stash.toggleIncludeHotbar();
             }
             playClick();
-        }).setActiveSupplier(() -> {
+        }).setIcon("hotbar").setActiveSupplier(() -> {
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             return stash != null && stash.isIncludeHotbar();
         });
@@ -56,14 +56,14 @@ public final class StorageUi {
                 ToastUtils.sendToast("§6Storage", "Dumping inventory...");
             }
             playClick();
-        });
+        }).setIcon("dump");
     }
 
     public static ModernButton requestButton(int x, int y, int width, int height, Runnable action) {
         return new ModernButton(x, y, width, height, Component.literal("Request"), button -> {
             action.run();
             playClick();
-        });
+        }).setIcon("request");
     }
 
     public static ModernButton autoStashButton(int x, int y, int width, int height) {
@@ -73,7 +73,7 @@ public final class StorageUi {
                 stash.setEnabled(true);
                 playClick();
             }
-        });
+        }).setIcon("deposit");
     }
 
     public static ModernButton clearCacheButton(int x, int y, int width, int height, Runnable onCleared) {
@@ -82,7 +82,7 @@ public final class StorageUi {
             onCleared.run();
             ToastUtils.sendToast("§6Storage", "Cache cleared.");
             playClick();
-        });
+        }).setIcon("clear");
     }
 
     public static ModernButton buildCacheButton(int x, int y, int width, int height) {
@@ -94,15 +94,22 @@ public final class StorageUi {
                 ToastUtils.sendToast("§bStorage", "Rebuilding cache...");
             }
             playClick();
-        });
+        }).setIcon("build");
     }
 
     /* Filter category button; highlights while its category is the grid's current one. */
     public static ModernButton categoryButton(int x, int y, int width, int height, ItemFilterCategory category,
                                               Runnable onSelect, BooleanSupplier isActive) {
-        return new ModernButton(x, y, width, height, Component.literal(category.displayName), button -> {
+        ModernButton button = new ModernButton(x, y, width, height, Component.literal(category.displayName), pressed -> {
             onSelect.run();
             playClick();
         }).setActiveSupplier(isActive);
+        return switch (category) {
+            case BLOCKS -> button.setIcon("block", 300);
+            case ORES -> button.setIcon("resource", 32);
+            case TOOLS_ARMOR -> button.setIcon("gear", 32);
+            case MISC -> button.setIcon("misc", 32);
+            case ALL -> button.setIcon("all");
+        };
     }
 }

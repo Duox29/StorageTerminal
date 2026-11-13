@@ -84,7 +84,7 @@ public class StorageScreen extends Screen {
         int topButtonsY = guiTop - 20;
         int closeBtnX = guiLeft + metrics.width() - 20;
         int buttonSpacing = 2;
-        int sideBtnWidth = 40;
+        int sideBtnWidth = 20;
 
         ModernButton closeBtn = new ModernButton(closeBtnX, topButtonsY, 20, 20, Component.literal("X"), b -> {
             if (!storageManager.isRetrieving()) {
@@ -111,7 +111,7 @@ public class StorageScreen extends Screen {
                 dumpBtnX - sideBtnWidth - buttonSpacing, topButtonsY, sideBtnWidth, 20);
         this.addRenderableWidget(hotbarButton);
 
-        int btnWidth = 55;
+        int btnWidth = 24;
         int btnHeight = 24;
         int startY = guiTop;
         int startX = guiLeft - btnWidth - 4;
@@ -157,7 +157,7 @@ public class StorageScreen extends Screen {
     }
 
     private ItemGridView.Layout layout() {
-        return metrics.layoutAt(guiLeft, guiTop, 16, 7);
+        return metrics.layoutAt(guiLeft, guiTop, 12, 7);
     }
 
     @Override

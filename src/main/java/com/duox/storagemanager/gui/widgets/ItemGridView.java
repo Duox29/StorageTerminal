@@ -20,6 +20,7 @@ import java.util.Map;
 
 /* Aggregates, filters, and renders cached items. */
 public class ItemGridView {
+    private static final float COUNT_SCALE = 0.75f;
 
     /* Grid geometry rebuilt when the screen layout changes. */
     public record Layout(int gridX, int gridY, int cols, int rows, int slotSize,
@@ -148,7 +149,14 @@ public class ItemGridView {
             graphics.pose().translate(x + 1, y + 1);
             graphics.pose().scale(layout.itemScale(), layout.itemScale());
             graphics.item(entry.stack, 0, 0);
-            graphics.itemDecorations(mc.font, entry.stack, 0, 0, shortenedCount(entry.totalCount));
+            graphics.itemDecorations(mc.font, entry.stack, 0, 0, "");
+            String count = shortenedCount(entry.totalCount);
+            graphics.pose().pushMatrix();
+            graphics.pose().translate(16 - mc.font.width(count) * COUNT_SCALE,
+                    16 - mc.font.lineHeight * COUNT_SCALE);
+            graphics.pose().scale(COUNT_SCALE, COUNT_SCALE);
+            graphics.text(mc.font, count, 0, 0, 0xFFFFFFFF, true);
+            graphics.pose().popMatrix();
             graphics.pose().popMatrix();
 
             int queued = storageManager.getQueued(entry.id);
@@ -341,13 +349,17 @@ public class ItemGridView {
     }
 
     private static String shortenedCount(int count) {
-        if (count >= 1000000) {
-            return String.format("%.1fM", count / 1000000.0);
-        }
-        if (count >= 1000) {
-            return String.format("%.1fk", count / 1000.0);
-        }
-        return String.valueOf(count);
+        if (count < 1_000) return Integer.toString(count);
+        if (count < 10_000) return decimalCount(count, 1_000, "k");
+        if (count < 100_000) return decimalCount(count, 10_000, "w");
+        if (count < 1_000_000) return count / 10_000 + "w";
+        if (count < 10_000_000) return decimalCount(count, 1_000_000, "m");
+        if (count < 1_000_000_000) return count / 1_000_000 + "m";
+        return decimalCount(count, 1_000_000_000, "b");
+    }
+
+    private static String decimalCount(int count, int unit, String suffix) {
+        return count / unit + "." + (count % unit) / (unit / 10) + suffix;
     }
 
     private static final class ItemEntry {
