@@ -444,7 +444,7 @@ public class AutoStash extends Module {
             // Re-plan if items remain.
             if (hasItemsToStash()) {
                 forceRefreshActiveCache();
-                stashQueue = planStash(false);
+                stashQueue = planStash(isDumpMode);
 
                 if (!stashQueue.isEmpty()) {
                     stashIterator = stashQueue.entrySet().iterator();

@@ -54,7 +54,7 @@ public class StashPlanner {
         if (stack.isEmpty()) return;
 
         String itemId = ItemSerializer.serialize(stack);
-        BlockPos bestChest = scoringEngine.findBestChest(itemId, player.blockPosition(), range,
+        BlockPos bestChest = scoringEngine.findBestChest(stack, itemId, player.blockPosition(), range,
                 cache, processedChests, forceDump);
         if (bestChest != null) {
             plan.computeIfAbsent(bestChest, k -> new ArrayList<>()).add(inventorySlot);

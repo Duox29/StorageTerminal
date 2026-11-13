@@ -8,8 +8,11 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.player.LocalPlayer;
+import net.minecraft.world.inventory.InventoryMenu;
+import net.minecraft.world.item.ItemStack;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -18,6 +21,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ClientPacketListener.class)
 public class MixinClientPacketListener {
+
+    @Redirect(method = "handleContainerSetSlot", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/world/inventory/InventoryMenu;setRemoteSlot(ILnet/minecraft/world/item/ItemStack;)V"))
+    private void updateCreativeRemoteSlot(InventoryMenu menu, int slot, ItemStack stack,
+                                          ClientboundContainerSetSlotPacket packet) {
+        // The visible Creative screen can remain open while a silent storage menu is active.
+        if (packet.getContainerId() == 0 && slot >= 0 && slot < menu.slots.size()) {
+            menu.setRemoteSlot(slot, stack);
+        }
+    }
 
     @Redirect(method = "handleContainerClose", at = @At(value = "INVOKE",
             target = "Lnet/minecraft/client/player/LocalPlayer;clientSideCloseContainer()V"))
