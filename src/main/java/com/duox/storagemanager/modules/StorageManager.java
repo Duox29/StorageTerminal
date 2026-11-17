@@ -13,12 +13,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.display.RecipeDisplayId;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.HitResult;
 import net.minecraft.client.gui.screens.inventory.CraftingScreen;
 import net.minecraft.world.level.block.CraftingTableBlock;
-import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.*;
 
@@ -33,8 +29,8 @@ public class StorageManager extends Module {
     private Iterator<Map.Entry<BlockPos, Map<String, Integer>>> retrievalIterator;
     private Map.Entry<BlockPos, Map<String, Integer>> currentTargetEntry;
 
-    private RecipeDisplayId pendingRecipeId = null;
-    private boolean pendingRecipePlaceAll = false;
+    private java.util.function.Consumer<CraftingScreen> pendingRecipeTransfer;
+    private CraftingScreen pendingRecipeScreen;
 
     private enum State {
         IDLE,
@@ -184,16 +180,10 @@ public class StorageManager extends Module {
     public void clearRequestQueue() {
         requestQueue.clear();
         activeRequests.clear();
-        pendingRecipeId = null;
-        pendingRecipePlaceAll = false;
     }
 
     public void clearPendingRequests() {
         requestQueue.clear();
-        if (currentState == State.IDLE && activeRequests.isEmpty()) {
-            pendingRecipeId = null;
-            pendingRecipePlaceAll = false;
-        }
     }
 
     public boolean isRetrieving() {
@@ -222,31 +212,44 @@ public class StorageManager extends Module {
     }
 
     public void startRetrieval() {
-        startRetrieval(null, false);
-    }
-
-    public void startRetrieval(RecipeDisplayId recipe, boolean placeAll) {
         if (requestQueue.isEmpty()) {
-            if (currentState == State.IDLE) {
-                sendMessage("Queue is empty.");
-            }
+            if (currentState == State.IDLE) sendMessage("Queue is empty.");
             return;
         }
-
-        StorageTransferCoordinator.retrieveRequests(requestQueue, recipe, placeAll);
+        StorageTransferCoordinator.retrieveRequests(requestQueue);
         requestQueue.clear();
     }
 
-    public boolean startQueuedRetrieval(Map<String, Integer> requests, RecipeDisplayId recipe, boolean placeAll) {
+    public boolean startQueuedRetrieval(Map<String, Integer> requests) {
         if (!isEnabled() || mc.player == null || currentState != State.IDLE || !activeRequests.isEmpty()
                 || isStashActive() || !mc.player.containerMenu.getCarried().isEmpty()) return false;
         activeRequests.putAll(requests);
-        pendingRecipeId = recipe;
-        pendingRecipePlaceAll = placeAll;
         returnToContainerPos = null;
-        if (recipe != null) captureCraftingTableContext();
         currentState = State.PLANNING;
         return true;
+    }
+
+    public boolean startRecipeRetrieval(Map<String, Integer> requests, BlockPos pos, int menuId,
+                                        java.util.function.Consumer<CraftingScreen> completion) {
+        if (mc.player == null || mc.level == null || mc.player.containerMenu.containerId != menuId
+                || !(mc.gui.screen() instanceof CraftingScreen screen) || screen.getMenu() != mc.player.containerMenu
+                || !(mc.level.getBlockState(pos).getBlock() instanceof CraftingTableBlock)) return false;
+        if (!startQueuedRetrieval(requests)) return false;
+        returnToContainerPos = pos;
+        pendingRecipeTransfer = completion;
+        pendingRecipeScreen = screen;
+        return true;
+    }
+
+    private void finishRecipeTransfer(CraftingScreen screen) {
+        var completion = pendingRecipeTransfer;
+        pendingRecipeTransfer = null;
+        if (completion != null) completion.accept(screen);
+    }
+
+    public void cancelRecipeTransfer() {
+        finishRecipeTransfer(null);
+        pendingRecipeScreen = null;
     }
 
     /** Starts a direct drag transfer into one player inventory slot. */
@@ -282,23 +285,6 @@ public class StorageManager extends Module {
         return stash != null && stash.isSilentMode();
     }
 
-    private void captureCraftingTableContext() {
-        if (mc.player != null && mc.gui.screen() instanceof CraftingScreen screen
-                && screen.getMenu() == mc.player.containerMenu) {
-            HitResult hit = mc.hitResult;
-            if (hit != null && hit.getType() == HitResult.Type.BLOCK) {
-                BlockHitResult blockHit = (BlockHitResult) hit;
-                BlockPos pos = blockHit.getBlockPos();
-                if (mc.level != null) {
-                    BlockState state = mc.level.getBlockState(pos);
-                    if (state.getBlock() instanceof CraftingTableBlock) {
-                        returnToContainerPos = pos;
-                    }
-                }
-            }
-        }
-    }
-
     public void ensureCacheLoaded() {
         if (ChestCache.ensureLoaded(mc)) {
             int size = ChestCache.getGlobalBuffer().size();
@@ -307,11 +293,11 @@ public class StorageManager extends Module {
     }
 
     private void resetState() {
+        finishRecipeTransfer(null);
+        pendingRecipeScreen = null;
         currentState = State.IDLE;
         returnToContainerPos = null;
         silentContainerId = -1;
-        pendingRecipeId = null;
-        pendingRecipePlaceAll = false;
         activeRequests.clear();
         retrievalPlan.clear();
         retrievalIterator = null;
@@ -363,7 +349,7 @@ public class StorageManager extends Module {
     private void finalizePlanning(Map<String, Integer> remainingNeeds) {
         if (!remainingNeeds.isEmpty()) {
             sendMessage("Warning: Cannot find all items. Missing: " + remainingNeeds);
-            pendingRecipeId = null;
+            finishRecipeTransfer(null);
         }
 
         if (retrievalPlan.isEmpty()) {
@@ -428,8 +414,10 @@ public class StorageManager extends Module {
     }
 
     private void handleEmptyPlan() {
+        finishRecipeTransfer(null);
+        pendingRecipeScreen = null;
+        returnToContainerPos = null;
         sendMessage("Could not find any items to retrieve.");
-        pendingRecipeId = null;
         finishOrPlanNext();
     }
 
@@ -472,9 +460,16 @@ public class StorageManager extends Module {
             if (!activeRequests.isEmpty()) {
                 currentState = State.PLANNING;
             } else {
+                if (retrievalPlan.values().stream().flatMap(items -> items.values().stream()).anyMatch(count -> count > 0)) {
+                    finishRecipeTransfer(null);
+                }
+                if (pendingRecipeScreen != null && mc.gui.screen() != pendingRecipeScreen) {
+                    finishRecipeTransfer(null);
+                    returnToContainerPos = null;
+                }
+                pendingRecipeScreen = null;
                 if (returnToContainerPos != null) {
                     openReturnContainer();
-                    returnToContainerPos = null;
                     waitTimer = 20;
                     currentState = State.WAITING_FOR_RETURN_OPEN;
                 } else {
@@ -486,18 +481,16 @@ public class StorageManager extends Module {
 
     private void handleWaitingForReturn() {
         if (mc.player != null && mc.gui.screen() instanceof CraftingScreen screen
-                && screen.getMenu() == mc.player.containerMenu) {
-            if (pendingRecipeId != null && mc.player != null) {
-                mc.gameMode.handlePlaceRecipe(mc.player.containerMenu.containerId, pendingRecipeId, pendingRecipePlaceAll);
-                pendingRecipeId = null;
-            }
+                && screen.getMenu() == mc.player.containerMenu
+                && Objects.equals(returnToContainerPos,
+                        ManualContainerTracker.getConfirmedManualContainer(screen.getMenu().containerId))) {
+            returnToContainerPos = null;
             finishOrPlanNext();
-        } else {
-            waitTimer--;
-            if (waitTimer <= 0) {
-                pendingRecipeId = null;
-                finishOrPlanNext();
-            }
+            finishRecipeTransfer(screen);
+        } else if (--waitTimer <= 0) {
+            returnToContainerPos = null;
+            finishRecipeTransfer(null);
+            finishOrPlanNext();
         }
     }
 
@@ -705,7 +698,9 @@ public class StorageManager extends Module {
 
     private void openReturnContainer() {
         if (returnToContainerPos == null) return;
-        InventoryUtils.useItemOnSilently(returnToContainerPos);
+        // The reopened table has a new menu ID; register it as the restored
+        // manual container so subsequent JEI transfers can find the table.
+        InventoryUtils.useItemOnSilently(returnToContainerPos, true);
     }
 
     private void sendMessage(String message) {

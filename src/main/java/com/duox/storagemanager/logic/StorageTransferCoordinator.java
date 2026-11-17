@@ -14,18 +14,19 @@ import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CraftingScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.level.block.CraftingTableBlock;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /** Runs drag transfers one at a time; both modules share the silent container connection. */
 public final class StorageTransferCoordinator {
     private record Transfer(String itemId, int quantity, int inventorySlot, boolean stash,
                             ItemStack expectedStack, Map<String, Integer> requests,
-                            RecipeDisplayId recipe, boolean placeAll) {}
+                            BlockPos recipePos, int originalMenuId,
+                            Consumer<CraftingScreen> completion) {}
     private record ReturnContext(Screen screen, BlockPos pos) {}
 
     private static final Deque<Transfer> pending = new ArrayDeque<>();
@@ -39,7 +40,7 @@ public final class StorageTransferCoordinator {
     private StorageTransferCoordinator() {}
 
     public static void retrieve(String itemId, int quantity, int inventorySlot, ItemStack expectedStack) {
-        pending.addLast(new Transfer(itemId, quantity, inventorySlot, false, expectedStack.copy(), null, null, false));
+        pending.addLast(new Transfer(itemId, quantity, inventorySlot, false, expectedStack.copy(), null, null, -1, null));
     }
 
     /** Requests up to one full stack into the first free inventory slot (Ctrl-click). */
@@ -54,8 +55,17 @@ public final class StorageTransferCoordinator {
         retrieve(itemId, Math.min(expectedStack.getMaxStackSize(), available), slot, expectedStack);
     }
 
-    public static void retrieveRequests(Map<String, Integer> requests, RecipeDisplayId recipe, boolean placeAll) {
-        pending.addLast(new Transfer(null, 0, -1, false, ItemStack.EMPTY, Map.copyOf(requests), recipe, placeAll));
+    public static void retrieveRequests(Map<String, Integer> requests) {
+        pending.addLast(new Transfer(null, 0, -1, false, ItemStack.EMPTY, Map.copyOf(requests), null, -1, null));
+    }
+
+    /** Queue a recipe while preserving the original crafting table and completion. */
+    public static boolean retrieveRecipe(Map<String, Integer> requests, BlockPos pos, int menuId,
+                                                Consumer<CraftingScreen> completion) {
+        if (requests.isEmpty() || pos == null || completion == null || active != null || !pending.isEmpty()) return false;
+        pending.addLast(new Transfer(null, 0, -1, false, ItemStack.EMPTY, Map.copyOf(requests),
+                pos.immutable(), menuId, completion));
+        return true;
     }
 
     public static boolean stash(int inventorySlot, ItemStack expectedStack) {
@@ -74,16 +84,23 @@ public final class StorageTransferCoordinator {
             return true;
         }
         pending.addLast(new Transfer(ItemSerializer.serialize(expectedStack), expectedStack.getCount(),
-                inventorySlot, true, expectedStack.copy(), null, null, false));
+                inventorySlot, true, expectedStack.copy(), null, null, -1, null));
         return true;
     }
 
     public static void clear() {
+        if (active != null && active.completion() != null) {
+            StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
+            if (storage != null) storage.cancelRecipeTransfer();
+        }
         if (active != null && active.requests() == null) {
             StorageManager storage = ModuleManager.INSTANCE.getModule(StorageManager.class);
             AutoStash stash = ModuleManager.INSTANCE.getModule(AutoStash.class);
             if (storage != null) storage.cancelTargetedRetrieval();
             if (stash != null) stash.cancelTargetedStash();
+        }
+        for (Transfer transfer : pending) {
+            if (transfer.completion() != null) transfer.completion().accept(null);
         }
         pending.clear();
         returnContext = null;
@@ -152,6 +169,15 @@ public final class StorageTransferCoordinator {
         AutoStash autoStash = ModuleManager.INSTANCE.getModule(AutoStash.class);
         if (active != null && (storage == null || !storage.isRetrieving())
                 && (autoStash == null || !autoStash.isEnabled() && !autoStash.isCancelling())) active = null;
+        if (!pending.isEmpty() && pending.peekFirst().completion() != null) {
+            Transfer recipe = pending.peekFirst();
+            if (mc.player.containerMenu.containerId != recipe.originalMenuId()
+                    || !(mc.gui.screen() instanceof CraftingScreen screen)
+                    || screen.getMenu() != mc.player.containerMenu) {
+                pending.removeFirst().completion().accept(null);
+                ToastUtils.sendToast("§6Storage Terminal", "Recipe transfer cancelled: crafting screen changed.");
+            }
+        }
         if (pending.isEmpty()) {
             // A carried stack must not strand the previous container screen.
             // Pending transfers still wait for an empty cursor below, but once
@@ -167,10 +193,12 @@ public final class StorageTransferCoordinator {
         }
 
         Transfer next = pending.removeFirst();
-        ReturnContext candidate = returnContext == null && next.recipe() == null
+        ReturnContext candidate = returnContext == null && next.completion() == null
                 ? capturePreviousContainer() : null;
         boolean started = next.requests() != null
-                ? storage.startQueuedRetrieval(next.requests(), next.recipe(), next.placeAll())
+                ? next.completion() != null
+                ? storage.startRecipeRetrieval(next.requests(), next.recipePos(), next.originalMenuId(), next.completion())
+                : storage.startQueuedRetrieval(next.requests())
                 : next.stash()
                 ? autoStash.startTargetedStash(next.inventorySlot(), next.expectedStack())
                 : storage.startTargetedRetrieval(next.itemId(), next.quantity(),
@@ -179,7 +207,8 @@ public final class StorageTransferCoordinator {
             active = next;
             if (returnContext == null) returnContext = candidate;
         } else {
-            ToastUtils.sendToast("§6Storage Terminal", "Drag transfer cancelled: items or slot changed.");
+            if (next.completion() != null) next.completion().accept(null);
+            ToastUtils.sendToast("§6Storage Terminal", "Transfer cancelled: container or items changed.");
         }
     }
 

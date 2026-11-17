@@ -29,6 +29,14 @@ repositories {
     }
     mavenCentral()
     maven {
+        name = "JEI"
+        url = "https://maven.blamejared.com"
+        content {
+            includeGroup "mezz.jei"
+            includeGroup "net.mezzdev.config"
+        }
+    }
+    maven {
         name = "Modrinth"
         url = "https://api.modrinth.com/maven"
         content { includeGroup "maven.modrinth" }
@@ -124,6 +132,8 @@ publishing {
 }
 
 dependencies {
+    compileOnly "mezz.jei:jei-26.3-common-api:31.14.0.72"
+    runtimeOnly "mezz.jei:jei-26.3-neoforge:31.14.0.72"
     jarJar(implementation "org.xerial:sqlite-jdbc:3.45.3.0")
     // Development runtime only; neither mod is bundled with Storage Terminal.
     runtimeOnly "maven.modrinth:sophisticated-core:wGa0E4M4"
